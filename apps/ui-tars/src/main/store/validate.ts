@@ -18,7 +18,9 @@ export const PresetSchema = z.object({
   vlmProvider: z.literal(VLMProviderV2.gemini).optional(),
   vlmBaseUrl: z.string().url(),
   vlmApiKey: z.string().min(1),
-  vlmModelName: z.string().regex(/^gemini-[a-zA-Z0-9._-]+$/),
+  vlmModelName: z
+    .string()
+    .regex(/^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/),
   liveModelName: z
     .string()
     .regex(/^gemini-[a-zA-Z0-9._-]+$/)

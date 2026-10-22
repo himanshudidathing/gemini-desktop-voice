@@ -1,10 +1,10 @@
 # Gemini Desktop — voice and actions
 
-A Google Gemini-only desktop assistant built on [ByteDance UI-TARS Desktop](https://github.com/bytedance/UI-TARS-desktop). Give it a task by typing, attaching an audio recording, or saying its name. It uses screenshots to control your local computer or Chrome, then replies using Gemini Live native audio.
+A Google Gemini and Gemma desktop assistant built on [ByteDance UI-TARS Desktop](https://github.com/bytedance/UI-TARS-desktop). Give it a task by typing, attaching an audio recording, or saying its name. It uses screenshots to control your local computer or Chrome, then replies using Gemini Live native audio.
 
 ## What changed
 
-- Google Gemini is the only provider exposed by the desktop app. Desktop actions use Google's native `generateContent` API.
+- Google is the only provider exposed by the desktop app. Desktop actions use Gemma 4 31B by default, or a Gemini vision model, through Google's native `generateContent` API.
 - Gemini Live provides streaming microphone input, speech transcription, and native spoken replies.
 - Say **“Gemini, open Chrome”**, or say **“Gemini”** and then give the task within 12 seconds. The name and voice are configurable.
 - Say **“Gemini, stop”** to cancel a task. A visible Stop task button is also available.
@@ -12,7 +12,7 @@ A Google Gemini-only desktop assistant built on [ByteDance UI-TARS Desktop](http
 - Results from spoken, typed, and uploaded-audio tasks are spoken while voice mode is enabled.
 - The upstream hosted remote operators and provider switcher are absent from this app. Upstream automatic updates are disabled to preserve this fork.
 
-The original monorepo libraries and their licenses remain in the source tree as upstream infrastructure; the desktop runtime is wired exclusively to Gemini. This is a prompt-driven screenshot/action integration, not Google's separately billed Computer Use tool API.
+The original monorepo libraries and their licenses remain in the source tree as upstream infrastructure; the desktop runtime is wired exclusively to Google APIs. This is a prompt-driven screenshot/action integration, not Google's separately billed Computer Use tool API.
 
 ## Run
 
@@ -30,12 +30,12 @@ If dependencies were installed with `--ignore-scripts`, finish native/Electron i
 
 Open **Your computer** or **Your browser**. Enter a [Google AI Studio API key](https://aistudio.google.com/apikey) in Gemini Settings. Defaults:
 
-| Setting          | Default            |
-| ---------------- | ------------------ |
-| Task model       | `gemini-3.8-flash` |
-| Live voice model | `gemini-3.8-live`  |
-| Assistant name   | `Gemini`           |
-| Speaking voice   | `Aoede`            |
+| Setting          | Default           |
+| ---------------- | ----------------- |
+| Task model       | `gemma-4-31b-it`  |
+| Live voice model | `gemini-3.8-live` |
+| Assistant name   | `Gemini`          |
+| Speaking voice   | `Aoede`           |
 
 Choose model IDs available to your Google project. Allow microphone access when you enable voice. Desktop screen/accessibility permissions and local Chrome are needed for their respective operators.
 
@@ -51,7 +51,7 @@ Uploaded recordings are sent only when you select them and become editable text;
 
 ## Free-tier access
 
-Google currently lists free-tier input/output for Gemini Live and the default Flash task model. A free-tier Google Developer API project and available quota are required. Model access, regional eligibility, and quotas are controlled by Google. This app does not provision billing, buy credits, or bypass limits; an API key attached to a paid project follows that project's billing settings.
+Check Google AI Studio for model availability, pricing, and free-tier quota for your project. Model access, regional eligibility, and quotas are controlled by Google. This app does not provision billing, buy credits, or bypass limits; an API key attached to a paid project follows that project's billing settings.
 
 - [Google pricing](https://ai.google.dev/gemini-api/docs/pricing)
 - [Google Live API capabilities](https://ai.google.dev/gemini-api/docs/live-api/capabilities)
@@ -72,3 +72,5 @@ The regression suite covers native Google requests, screenshot coordinates, wake
 ## Attribution
 
 Based on the Apache-2.0 UI-TARS Desktop project by ByteDance. Upstream notices, licenses, and shared packages are retained. The previous upstream introduction is preserved in [docs/upstream-README.md](docs/upstream-README.md).
+
+Gemma 4 31B is now the default desktop task model (`gemma-4-31b-it`); Gemini remains available for tasks and powers Live voice/audio transcription. REST calls share a process-local 30 RPM / 16,000 TPM budget. See [SETUP.md](SETUP.md#gemma-4-and-rest-rate-limits) for scope, configuration, and verification limits.

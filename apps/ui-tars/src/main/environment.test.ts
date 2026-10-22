@@ -24,6 +24,15 @@ describe('Gemini environment configuration', () => {
     });
     expect(result.overrides).toEqual({});
   });
+  it('allows Gemma tasks while rejecting Gemma as the Live model', () => {
+    expect(
+      resolveGeminiEnvironment({ GEMINI_MODEL: 'gemma-4-31b-it' }).defaults
+        .vlmModelName,
+    ).toBe('gemma-4-31b-it');
+    expect(() =>
+      resolveGeminiEnvironment({ GEMINI_LIVE_MODEL: 'gemma-4-31b-it' }),
+    ).toThrow();
+  });
   it('maps every documented environment variable to the running app', () => {
     expect(
       resolveGeminiEnvironment({

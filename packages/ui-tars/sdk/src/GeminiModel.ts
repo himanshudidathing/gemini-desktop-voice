@@ -1,13 +1,16 @@
 /** Google-only native generateContent transport for the desktop screenshot loop. */
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { UITarsModelVersion } from '@ui-tars/shared/types';
+import { googleGenerateContent } from './googleQuota';
 import { UITarsModel, type UITarsModelConfig } from './Model';
 
 export class GeminiModel extends UITarsModel {
   constructor(config: UITarsModelConfig) {
     super({ ...config, provider: 'gemini', useResponsesApi: false });
-    if (!/^gemini-[a-zA-Z0-9._-]+$/.test(config.model))
-      throw new Error('A Gemini model ID is required.');
+    if (
+      !/^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/.test(config.model)
+    )
+      throw new Error('A Google Gemini or Gemma 4 model ID is required.');
   }
 
   toJSON() {
@@ -54,32 +57,25 @@ export class GeminiModel extends UITarsModel {
     }
     const started = Date.now();
     const signal = options.signal
-      ? AbortSignal.any([options.signal, AbortSignal.timeout(120000)])
-      : AbortSignal.timeout(120000);
-    const response = await (this.modelConfig.fetch ?? fetch)(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.modelName)}:generateContent`,
-      {
-        method: 'POST',
-        signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': this.modelConfig.apiKey ?? '',
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(180000)])
+      : AbortSignal.timeout(180000);
+    const data = await googleGenerateContent({
+      model: this.modelName,
+      apiKey: this.modelConfig.apiKey ?? '',
+      fetcher: this.modelConfig.fetch ?? fetch,
+      signal,
+      body: {
+        ...(system.length ? { systemInstruction: { parts: system } } : {}),
+        contents,
+        generationConfig: {
+          maxOutputTokens: this.modelConfig.max_tokens ?? 2048,
+          temperature: 0,
+          ...(this.modelName.startsWith('gemma-4-')
+            ? { thinkingConfig: { thinkingLevel: 'minimal' } }
+            : {}),
         },
-        body: JSON.stringify({
-          ...(system.length ? { systemInstruction: { parts: system } } : {}),
-          contents,
-          generationConfig: {
-            maxOutputTokens: this.modelConfig.max_tokens ?? 8192,
-            temperature: 0,
-          },
-        }),
       },
-    );
-    if (!response.ok)
-      throw new Error(
-        `Gemini request failed (${response.status}). Check your API key, model access, and quota.`,
-      );
-    const data = await response.json();
+    });
     const candidate = data.candidates?.[0];
     if (candidate?.finishReason === 'MAX_TOKENS')
       throw new Error('Gemini output was truncated; no action was executed.');

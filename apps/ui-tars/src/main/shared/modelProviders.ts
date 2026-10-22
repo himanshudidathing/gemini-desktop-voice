@@ -7,7 +7,7 @@ import type { LocalStore } from '../store/types';
 
 export const GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai/';
-export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
+export const GEMINI_DEFAULT_MODEL = 'gemma-4-31b-it';
 
 export function getLocalModelConfig(
   settings: Pick<
@@ -19,8 +19,12 @@ export function getLocalModelConfig(
     | 'useResponsesApi'
   >,
 ): UITarsModelConfig {
-  if (!/^gemini-[a-zA-Z0-9._-]+$/.test(settings.vlmModelName)) {
-    throw new Error('Choose a Gemini model ID in Settings.');
+  if (
+    !/^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/.test(
+      settings.vlmModelName,
+    )
+  ) {
+    throw new Error('Choose a Gemini or Gemma 4 model ID in Settings.');
   }
   return {
     baseURL: GEMINI_BASE_URL,

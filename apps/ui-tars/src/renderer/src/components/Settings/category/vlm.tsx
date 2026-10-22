@@ -16,7 +16,10 @@ const schema = z.object({
   vlmApiKey: z.string().trim().min(1, 'Enter your Google API key.'),
   vlmModelName: z
     .string()
-    .regex(/^gemini-[a-zA-Z0-9._-]+$/, 'Enter a Gemini task model ID.'),
+    .regex(
+      /^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/,
+      'Enter a Gemini or Gemma 4 task model ID.',
+    ),
   liveModelName: z
     .string()
     .regex(/^gemini-[a-zA-Z0-9._-]+$/, 'Enter a Gemini Live model ID.'),
@@ -90,11 +93,12 @@ export function VLMSettings({
   return (
     <div className={`space-y-5 ${className}`}>
       <div className="rounded-xl border bg-blue-50 p-4 text-sm text-slate-700">
-        <b>Google Gemini only</b>
+        <b>Google Gemini & Gemma 4</b>
         <p className="mt-1">
           One Google AI Studio key powers desktop actions, audio uploads, and
           Live voice. Free-tier access depends on your Google project and
-          quotas.
+          quotas. REST requests share a limit of 30 requests and 16,000 tokens
+          per minute. Gemini Live has separate streaming quotas.
         </p>
       </div>
       <label className="block space-y-2 text-sm font-medium">
@@ -118,7 +122,7 @@ export function VLMSettings({
         </div>
       </label>
       <label className="block space-y-2 text-sm font-medium">
-        Gemini task model
+        Gemini / Gemma task model
         <Input
           value={draft.vlmModelName}
           onChange={(e) => change('vlmModelName', e.target.value)}
@@ -155,6 +159,10 @@ export function VLMSettings({
           ))}
         </select>
       </label>
+      <p className="text-xs text-slate-500">
+        Task model: gemma-4-31b-it or a Gemini vision model. Audio uploads use
+        gemini-3.8-flash; Gemini Live handles streaming voice.
+      </p>
       <ModelAvailabilityCheck
         modelConfig={{
           baseUrl: GEMINI_BASE_URL,
@@ -210,7 +218,7 @@ export function ModelAvailabilityCheck({
             onResponseApiSupportChange?.(false);
             setMessage(
               available
-                ? 'Gemini task model is connected. Enable voice to check the Live connection.'
+                ? 'Gemini / Gemma task model is connected. Enable voice to check the Live connection.'
                 : 'The model returned no text.',
             );
             setFailed(!available);
@@ -227,7 +235,7 @@ export function ModelAvailabilityCheck({
         }}
       >
         {checking && <Loader2 className="mr-2 size-4 animate-spin" />}Check
-        Gemini connection
+        Google connection
       </Button>
       {message && (
         <p

@@ -23,8 +23,12 @@ export function resolveGeminiEnvironment(environment: NodeJS.ProcessEnv) {
   const overrides: Partial<GeminiDefaults> = {};
   const model = (key: string) => {
     const value = environment[key]?.trim();
-    if (value && !/^gemini-[a-zA-Z0-9._-]+$/.test(value))
-      throw new Error(`${key} must contain a Gemini model ID.`);
+    const pattern =
+      key === 'GEMINI_MODEL'
+        ? /^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/
+        : /^gemini-[a-zA-Z0-9._-]+$/;
+    if (value && !pattern.test(value))
+      throw new Error(`${key} must contain a supported Google model ID.`);
     return value;
   };
   const key = environment.GEMINI_API_KEY?.trim();

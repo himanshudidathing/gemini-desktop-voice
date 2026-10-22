@@ -28,6 +28,18 @@ describe('desktop Gemini configuration', () => {
     });
   });
 
+  it('accepts hosted Gemma 4 presets while Live remains Gemini', () => {
+    const preset = validatePreset({
+      ...settings,
+      vlmModelName: 'gemma-4-31b-it',
+      liveModelName: 'gemini-3.8-live',
+    });
+    expect(getLocalModelConfig(preset).model).toBe('gemma-4-31b-it');
+    expect(() =>
+      validatePreset({ ...settings, liveModelName: 'gemma-4-31b-it' }),
+    ).toThrow();
+  });
+
   it('always uses Google and disables Responses API', () => {
     expect(
       getLocalModelConfig({ ...settings, vlmBaseUrl: 'https://example.test' }),

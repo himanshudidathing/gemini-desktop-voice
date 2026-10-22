@@ -42,7 +42,7 @@ Enter your own key after `GEMINI_API_KEY=`. Keep `.env` on your computer; it is 
 | Variable                | Purpose                                                        | Default                                           |
 | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
 | `GEMINI_API_KEY`        | Google AI Studio API key                                       | Empty; must be supplied in `.env` or app Settings |
-| `GEMINI_MODEL`          | Native Gemini model for tasks and audio-file transcription     | `gemini-3.8-flash`                                |
+| `GEMINI_MODEL`          | Gemini or Gemma 4 vision model for desktop tasks               | `gemma-4-31b-it`                                  |
 | `GEMINI_LIVE_MODEL`     | Gemini Live model for streaming voice                          | `gemini-3.8-live`                                 |
 | `GEMINI_ASSISTANT_NAME` | Name to say before a spoken command; 2–32 characters           | `Gemini`                                          |
 | `GEMINI_VOICE`          | Speaking voice: `Aoede`, `Kore`, `Puck`, `Charon`, or `Fenrir` | `Aoede`                                           |
@@ -118,3 +118,15 @@ A manual **Gemini Desktop checks** workflow is available in GitHub Actions. Impo
 - **Browser operator unavailable:** install Chrome locally and check the browser settings.
 
 The source was checked with automated tests, type checks, production builds, and simulated browser microphone tests. Live Google calls and real computer actions must still be verified with your own API key and device.
+
+## Gemma 4 and REST rate limits
+
+Set `GEMINI_MODEL=gemma-4-31b-it` in `.env`, restart the app, and use **Check Google connection** in Settings. Existing saved task models remain unless overridden in `.env` or changed in Settings. Gemini vision models and `gemma-4-26b-a4b-it` also remain accepted. Gemma handles screenshots and GUI action text; Gemini Live still handles microphone input and spoken results. Audio-file uploads always use `gemini-3.8-flash`, because Gemma 4 31B does not accept audio.
+
+The app shares a fixed **30 requests per rolling 60 seconds** and **16,000 tokens per rolling 60 seconds** across REST task calls, model checks, and audio uploads using the same API key in this app process. Google `countTokens` preflight calls count toward the request limit too, so there are at most 15 generation calls per minute when each needs a preflight. The token guard counts the full prompt, screenshots/history/audio and reserves up to 2,048 output tokens before generation. Successful usage replaces that reservation; failed requests keep it conservatively. In-flight reservations do not expire, and completed usage stays for another 60 seconds. Long prompts that cannot fit the full output reservation are rejected: start a new task or shorten the recording.
+
+Requests wait for capacity and can be cancelled with **Stop task**. They time out after three minutes. A Google 429 response pauses subsequent requests for at least 60 seconds (or longer when Retry-After says so); failed actions are not automatically retried. These are local safeguards, not changes to Google's account quotas. Other app processes, other API keys in the same Google project, and external API clients are not coordinated. Restarting the app clears local counters. Gemini Live uses separate streaming quotas and is not covered by the REST budget.
+
+Gemma integration is covered by simulated transport/action tests. Real desktop accuracy and model availability still require a manual test with your own Google key.
+
+Google references: [Gemma on the Gemini API](https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api), [countTokens](https://ai.google.dev/api/tokens).

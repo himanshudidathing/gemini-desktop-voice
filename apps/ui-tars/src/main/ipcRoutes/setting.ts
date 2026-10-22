@@ -1,3 +1,4 @@
+import { googleGenerateContent } from '@ui-tars/sdk/core';
 import { initIpc } from '@ui-tars/electron-ipc/main';
 import { VLMProviderV2 } from '../store/types';
 const t = initIpc.create();
@@ -14,28 +15,28 @@ export const settingRoute = t.router({
   checkModelAvailability: t.procedure
     .input<ModelCheck>()
     .handle(async ({ input }) => {
-      if (!input.apiKey || !/^gemini-[a-zA-Z0-9._-]+$/.test(input.modelName))
-        throw new Error('Enter a Google API key and Gemini model ID.');
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.modelName)}:generateContent`,
-        {
-          method: 'POST',
-          signal: AbortSignal.timeout(60000),
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': input.apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }],
-            generationConfig: { maxOutputTokens: 8192 },
-          }),
-        },
-      );
-      if (!response.ok)
+      if (
+        !input.apiKey ||
+        !/^(gemini-[a-zA-Z0-9._-]+|gemma-4-(31b|26b-a4b)-it)$/.test(
+          input.modelName,
+        )
+      )
         throw new Error(
-          `Google returned ${response.status}. Check the API key, model availability, and quota.`,
+          'Enter a Google API key and Gemini or Gemma 4 model ID.',
         );
-      const data = await response.json();
+      const data = await googleGenerateContent({
+        model: input.modelName,
+        apiKey: input.apiKey,
+        body: {
+          contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }],
+          generationConfig: {
+            maxOutputTokens: 2048,
+            ...(input.modelName.startsWith('gemma-4-')
+              ? { thinkingConfig: { thinkingLevel: 'minimal' } }
+              : {}),
+          },
+        },
+      });
       return Boolean(
         data.candidates?.[0]?.content?.parts?.some(
           (part: { text?: string }) => part.text,
