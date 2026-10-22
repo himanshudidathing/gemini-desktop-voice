@@ -2,6 +2,7 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { UITarsModelVersion } from '@ui-tars/shared/types';
 import { googleRoutedGenerate } from './googleRouting';
+import { generateWithProviders } from './providers';
 import { UITarsModel, type UITarsModelConfig } from './Model';
 
 export class GeminiModel extends UITarsModel {
@@ -59,7 +60,7 @@ export class GeminiModel extends UITarsModel {
     const signal = options.signal
       ? AbortSignal.any([options.signal, AbortSignal.timeout(180000)])
       : AbortSignal.timeout(180000);
-    const data = await googleRoutedGenerate({
+    const request = {
       onRoute: this.modelConfig.onRoute,
       onWait: this.modelConfig.onWait,
       model: this.modelName,
@@ -77,7 +78,15 @@ export class GeminiModel extends UITarsModel {
             : {}),
         },
       },
-    });
+    };
+    const data = this.modelConfig.providers
+      ? await generateWithProviders({
+          ...request,
+          providers: this.modelConfig.providers,
+          vision: 'automation',
+          onVision: this.modelConfig.onVision,
+        })
+      : await googleRoutedGenerate(request);
     const candidate = data.candidates?.[0];
     if (candidate?.finishReason === 'MAX_TOKENS')
       throw new Error('Gemini output was truncated; no action was executed.');

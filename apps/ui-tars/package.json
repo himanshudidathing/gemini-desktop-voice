@@ -4,7 +4,7 @@
   "private": true,
   "main": "./dist/main/main.js",
   "packageManager": "pnpm@9.10.0",
-  "description": "Local-first desktop assistant with offline voice, Gemma routing, and screen tools.",
+  "description": "Desktop assistant with Google voice, Groq/Gemma routing, and local screen tools.",
   "author": "ByteDance",
   "scripts": {
     "format": "prettier --write .",

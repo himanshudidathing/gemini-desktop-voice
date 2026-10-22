@@ -8,6 +8,7 @@ export default [
         'apps/ui-tars/src/main/shared/*.test.ts',
         'apps/ui-tars/src/main/environment.test.ts',
         'apps/ui-tars/src/main/services/geminiLive.test.ts',
+        'apps/ui-tars/src/main/services/googleVoice.test.ts',
         'apps/ui-tars/src/main/services/audioTranscription.test.ts',
         'apps/ui-tars/src/main/services/operations.test.ts',
         'apps/ui-tars/src/main/agent/operator.test.ts',

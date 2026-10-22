@@ -127,6 +127,17 @@ export type MediaArtifact = {
   durationMs?: number;
 };
 export type AssistantEvent =
+  | { type: 'voice-control'; action: 'toggle' | 'on' | 'off' }
+  | { type: 'voice-transcript'; text: string }
+  | { type: 'voice-interrupt' }
+  | { type: 'voice-speaking'; state: 'preparing' | 'idle' }
+  | { type: 'voice-audio'; data: string; mimeType: string; epoch: number }
+  | {
+      type: 'vision';
+      id: string;
+      imageId?: string;
+      result: import('@ui-tars/sdk/core').VisionResult;
+    }
   | { type: 'status'; id: string; text: string; model?: string }
   | { type: 'delta'; id: string; text: string }
   | { type: 'done'; id: string; text: string; cancelled?: boolean }
@@ -148,3 +159,35 @@ export type AssistantRequest = {
   imageId?: string;
   history?: { role: 'user' | 'model'; text: string }[];
 };
+
+/** Convert action metadata to user-facing status/readout without speaking action syntax. */
+export function desktopText(
+  message?: {
+    value?: string;
+    predictionParsed?: Array<{
+      action_type: string;
+      action_inputs?: Record<string, unknown>;
+      thought?: string | null;
+    }>;
+  },
+  final = false,
+): string {
+  const predictions = message?.predictionParsed || [];
+  const terminal = predictions.findLast((p) =>
+    ['finished', 'call_user'].includes(p.action_type),
+  );
+  if (
+    typeof terminal?.action_inputs?.content === 'string' &&
+    terminal.action_inputs.content.trim()
+  )
+    return terminal.action_inputs.content;
+  const thought = predictions.at(-1)?.thought;
+  if (typeof thought === 'string' && thought.trim()) return thought;
+  const summary = (message?.value || '')
+    .split(/(?:^|\n)Action:/)[0]
+    .replace(/^Thought:\s*/, '')
+    .trim();
+  return (
+    summary || (final ? 'Desktop task ended.' : 'Working on your desktop…')
+  );
+}

@@ -62,3 +62,32 @@ describe('local capability classifier', () => {
     expect(classifyRequest('What is here?', 'auto', true).kind).toBe('screen');
   });
 });
+
+import { desktopText } from './assistant';
+it('speaks the final action result rather than action syntax', () => {
+  expect(
+    desktopText(
+      {
+        value: "Thought: Done.\nAction: finished(content='Saved')",
+        predictionParsed: [
+          {
+            action_type: 'finished',
+            action_inputs: { content: 'Saved the document.' },
+          },
+        ],
+      },
+      true,
+    ),
+  ).toBe('Saved the document.');
+});
+it('keeps desktop progress free of function arguments', () => {
+  expect(
+    desktopText({
+      value:
+        "Thought: Select the search field.\nAction: click(start_box='(400,200)')",
+    }),
+  ).toBe('Select the search field.');
+});
+it('does not claim success without a desktop result', () => {
+  expect(desktopText(undefined, true)).toBe('Desktop task ended.');
+});

@@ -12,6 +12,7 @@ import { store } from '../store/create';
 import { GUIAgentManager } from '../ipcRoutes/agent';
 import {
   localIntent,
+  desktopText,
   classifyRequest,
   FAST_MODEL,
   DEEP_MODEL,
@@ -29,7 +30,7 @@ import {
   currentRecordingId,
   revealArtifact,
 } from './localMedia';
-import { LocalSpeech } from './localSpeech';
+import { GoogleVoice } from './googleVoice';
 import { rendererUrl } from '../env';
 
 function trusted(event: IpcMainInvokeEvent, owner: WebContents) {
@@ -54,8 +55,8 @@ export function registerAssistantHandlers(window: BrowserWindow) {
   let conversation: NonNullable<AssistantRequest['history']> = [];
   let capturing = false;
   let recordingStopTimer: ReturnType<typeof setTimeout> | undefined;
-  const speech = new LocalSpeech(
-    (state, text) => emit({ type: 'voice', state, text }),
+  const speech = new GoogleVoice(
+    emit,
     (text) => {
       const id = randomUUID();
       emit({ type: 'heard', id, text });
@@ -63,8 +64,9 @@ export function registerAssistantHandlers(window: BrowserWindow) {
         (error) => emit({ type: 'error', id, text: error.message }),
       );
     },
+    () => interruptResponse(),
   );
-  const stop = () => {
+  const interruptResponse = () => {
     generation++;
     const id = activeId;
     activeId = undefined;
@@ -77,6 +79,10 @@ export function registerAssistantHandlers(window: BrowserWindow) {
       errorMsg: null,
     });
     speech.interrupt();
+    if (id) emit({ type: 'done', id, text: 'Stopped.', cancelled: true });
+  };
+  const stop = () => {
+    interruptResponse();
     const stoppedRecordingId = currentRecordingId();
     emit({ type: 'record-stop' });
     clearTimeout(recordingStopTimer);
@@ -90,19 +96,18 @@ export function registerAssistantHandlers(window: BrowserWindow) {
             emit({ type: 'error', id: '', text: error.message }),
           );
       }, 5000);
-    if (id) emit({ type: 'done', id, text: 'Stopped.', cancelled: true });
   };
   const toggleVoice = () => {
-    if (speech.enabled) speech.stop();
-    else speech.start(SettingStore.getStore().assistantName || 'Gemini');
+    emit({ type: 'voice-control', action: 'toggle' });
   };
   const local = async (command: LocalCommand, original: string) => {
     if (command === 'cancel' || command === 'pause' || command === 'clear')
       stop();
     if (command === 'microphone') {
       if (/\bunmute\b/i.test(original)) {
-        if (!speech.enabled) toggleVoice();
-      } else if (/\bmute\b/i.test(original)) speech.stop();
+        emit({ type: 'voice-control', action: 'on' });
+      } else if (/\bmute\b/i.test(original))
+        emit({ type: 'voice-control', action: 'off' });
       else toggleVoice();
     }
     const messages: Record<LocalCommand, string> = {
@@ -111,13 +116,13 @@ export function registerAssistantHandlers(window: BrowserWindow) {
         'Paused. The current operation was cancelled; send a new request when ready.',
       clear: 'Conversation cleared.',
       health: speech.enabled
-        ? 'Yes, I can hear you. I am listening locally.'
+        ? 'Yes, I can hear you. Google voice is listening.'
         : 'I am here. Turn on the microphone to use voice.',
       screenshot: 'Screenshot saved locally.',
       'record-start': 'Starting screen recording…',
       'record-stop': 'Saving recording…',
       settings: 'Settings opened.',
-      microphone: speech.enabled ? 'Microphone is on.' : 'Microphone is off.',
+      microphone: 'Microphone setting updated.',
       minimize: 'Panel minimized.',
       time: new Date().toLocaleTimeString([], {
         hour: '2-digit',
@@ -196,8 +201,21 @@ export function registerAssistantHandlers(window: BrowserWindow) {
       let answer = '';
       try {
         const settings = SettingStore.getStore();
-        if (!settings.vlmApiKey?.trim())
+        const providers = {
+          mode: settings.providerMode || ('GOOGLE' as const),
+          groqApiKey: settings.groqApiKey || '',
+          groqModel: settings.groqModel || 'qwen/qwen3.8-27b',
+        };
+        if (providers.mode === 'GOOGLE' && !settings.vlmApiKey?.trim())
           throw new Error('Add your Google API key in Settings.');
+        if (providers.mode === 'GROQ' && !providers.groqApiKey)
+          throw new Error('Add your Groq API key in Settings.');
+        if (
+          providers.mode === 'BOTH' &&
+          !settings.vlmApiKey?.trim() &&
+          !providers.groqApiKey
+        )
+          throw new Error('Add a provider API key in Settings.');
         if (route.kind === 'computer') {
           store.setState({
             abortController: op.controller,
@@ -213,13 +231,17 @@ export function registerAssistantHandlers(window: BrowserWindow) {
             model: DEEP_MODEL,
             onProgress: status,
             onRoute: (model, why) => status(why, model),
+            onVision: (result) => {
+              if (live()) emit({ type: 'vision', id: request.id, result });
+            },
           });
           const last = store
             .getState()
             .messages.findLast((m) => m.from === 'gpt');
-          answer = last?.value || 'Desktop task ended.';
+          answer = desktopText(last, true);
         } else {
           const parts: object[] = [{ text }];
+          let visionImageId = request.imageId;
           if (route.kind === 'screen') {
             let imageId = request.imageId;
             if (!imageId) {
@@ -228,6 +250,7 @@ export function registerAssistantHandlers(window: BrowserWindow) {
               imageId = artifact.id;
               if (live()) emit({ type: 'artifact', artifact });
             }
+            visionImageId = imageId;
             parts.push(screenshotPart(imageId));
           }
           op.signal.throwIfAborted();
@@ -246,9 +269,20 @@ export function registerAssistantHandlers(window: BrowserWindow) {
                   parts: [{ text: h.text.slice(0, 1800) }],
                 }))
             : [];
-          const { googleRoutedGenerate } = await import('@ui-tars/sdk/core');
+          const { generateWithProviders } = await import('@ui-tars/sdk/core');
           op.signal.throwIfAborted();
-          const result = await googleRoutedGenerate({
+          const result = await generateWithProviders({
+            providers,
+            vision: route.kind === 'screen' ? 'analysis' : undefined,
+            onVision: (result) => {
+              if (live())
+                emit({
+                  type: 'vision',
+                  id: request.id,
+                  imageId: visionImageId,
+                  result,
+                });
+            },
             model: route.model,
             apiKey: settings.vlmApiKey,
             signal: op.signal,
@@ -336,6 +370,17 @@ export function registerAssistantHandlers(window: BrowserWindow) {
   handle('submit', submit);
   handle('cancel', stop);
   handle('voice', toggleVoice);
+  handle('voice-start', () => speech.start(SettingStore.getStore()));
+  handle('voice-stop', () => speech.stop());
+  handle('voice-barge', interruptResponse);
+  ipcMain.on('assistant:voice-audio', (event, bytes: unknown) => {
+    try {
+      trusted(event as unknown as IpcMainInvokeEvent, owner);
+    } catch {
+      return;
+    }
+    if (bytes instanceof Uint8Array) speech.audio(bytes);
+  });
   handle('window', (action: string) => {
     if (action === 'minimize') window.minimize();
     if (action === 'expand') {
@@ -367,12 +412,21 @@ export function registerAssistantHandlers(window: BrowserWindow) {
   });
   handle('reveal', revealArtifact);
   handle('quotas', async () => {
-    const { getGoogleRestQuota } = await import('@ui-tars/sdk/core');
+    const { getGoogleRestQuota, getGroqQuota } = await import(
+      '@ui-tars/sdk/core'
+    );
     const key = SettingStore.getStore().vlmApiKey;
-    return [FAST_MODEL, DEEP_MODEL].map((model) => ({
-      model,
-      ...getGoogleRestQuota(key, model).snapshot(),
-    }));
+    return [FAST_MODEL, DEEP_MODEL]
+      .map((model) => ({
+        model,
+        ...getGoogleRestQuota(key, model).snapshot(),
+      }))
+      .concat([
+        {
+          model: SettingStore.getStore().groqModel || 'qwen/qwen3.8-27b',
+          ...getGroqQuota(SettingStore.getStore().groqApiKey || '').snapshot(),
+        },
+      ]);
   });
   handle('transcribe', async (bytes: Uint8Array, mimeType: string) => {
     const op = operations.begin('audio-upload-' + randomUUID(), 120000);

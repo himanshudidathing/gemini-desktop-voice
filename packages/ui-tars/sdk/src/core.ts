@@ -29,3 +29,11 @@ export {
   GoogleRequestError,
 } from './googleQuota';
 export type { RouteEvent } from './googleRouting';
+
+export {
+  generateWithProviders,
+  getGroqQuota,
+  DEFAULT_GROQ_MODEL,
+} from './providers';
+export type { ProviderSettings, ProviderMode } from './providers';
+export type { VisionResult, ScreenElement } from './vision';

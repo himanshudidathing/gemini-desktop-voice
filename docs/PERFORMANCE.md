@@ -1,79 +1,84 @@
-# Performance and reliability report
+# Performance and verification report
 
-## Reproducible measurements
+## Current pipeline
 
-Measured on the development Windows machine on 2026-10-22. The baseline is the prior production build in this checkout; all API responses in automated measurements are synthetic.
+Local intent matching still runs before any reasoning request. Restoring Google voice intentionally adds the requested speech services: continuous Google STT input and Google TTS output. A spoken local command uses Google speech but does not call Gemma or Groq for reasoning.
 
-| Metric                                             | Before                      | After                     |
-| -------------------------------------------------- | --------------------------- | ------------------------- |
-| REST requests per normal generation                | 2: countTokens + generation | 1: generation             |
-| Local command / screenshot / recording model calls | Task-dependent cloud flow   | 0                         |
-| Renderer emitted asset bytes                       | 970,811                     | 349,479                   |
-| Renderer asset reduction                           | —                           | 64.0%                     |
-| Local routing over 100,000 representative inputs   | Not measured                | Mean 0.00134 ms per input |
-| P95 of routing batch means                         | Not measured                | 0.00162 ms per input      |
-| Browser render-to-ready smoke test                 | Not measured                | 402 ms in one local run   |
-| Browser runtime errors across tested interactions  | —                           | 0                         |
+| Path                                         | Provider operations                                             |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| Typed local command / screenshot / recording | Zero model calls                                                |
+| Spoken local command                         | Google transcription; Google TTS for spoken acknowledgements    |
+| Ordinary text request                        | One Groq or Google generation; no countTokens preflight         |
+| Screenshot analysis with Groq                | One Qwen call returning summary and validated boxes             |
+| Desktop automation                           | One visual planning call per action, followed by a fresh screen |
+| Hybrid request while Groq is locally limited | Skip Groq network request; dispatch to Google                   |
+| Retryable Groq failure before output         | One bounded Google fallback path                                |
+| Spoken model answer                          | Google TTS after the selected model's answer                    |
 
-The browser startup measurement is not Electron startup time and excludes network/model latency. The classifier number measures text matching/classification only, not speech recognition or device action latency. P95 is over batch means, not a per-utterance percentile.
+There are no provider discovery or connection-test generation requests. Model IDs are configurable and verified against provider documentation during development.
 
-Scripts: `pnpm profile:assistant` and `pnpm test:assistant-ui`. Results are saved as JSON alongside screenshots under `test-results/assistant`, or `ASSISTANT_SMOKE_OUTPUT_DIR`.
+## Implemented optimizations
 
-Native Electron validation also passed: hidden startup to ready in 2866 ms; right-edge bounds, 460/820 px expand/restore, native desktop-operator module loading, local health handling, and cancellation IPC verified with zero reported runtime errors. A single startup snapshot summed process working sets to 663,428 KB. Shared pages can be counted more than once; this is not unique RSS or a before/after memory comparison.
-
-## Pipeline audit and changes
-
-| Bottleneck/failure                                | Implemented change                                                    | Effect                                                               |
-| ------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| countTokens before each generation                | Local conservative estimation + usage reconciliation                  | Removes one serial round trip and half the normal REST calls         |
-| Connection test generated “OK”                    | Local validation only                                                 | Saves RPM and avoids extra startup/validation traffic                |
-| All REST models shared one bucket                 | Per-model queues and counters                                         | Uses available capacity independently                                |
-| Unconditional one-second GUI loop sleep           | Scheduler paces dispatch only when needed                             | A slow model response does not incur an extra fixed second afterward |
-| All interactions used screenshot agent            | Separate text conversation route                                      | Routine questions do not capture screens or invoke a GUI loop        |
-| Cloud microphone before intent recognition        | Offline Windows speech + local matching                               | Local controls never need microphone cloud round trips               |
-| Repeated screenshot decoding/resizing             | Native metadata, direct target capture, two-entry preprocessing cache | Avoids redundant image work                                          |
-| Many historical screenshots/context turns         | Current image and bounded text/action windows                         | Smaller requests and bounded memory                                  |
-| 5 model retries and action retries                | Bounded alternate-model failover; no action replay                    | Avoids multi-minute retry stalls and duplicate side effects          |
-| 250 ms repeated identical progress updates        | Deduplicate status text                                               | Less renderer work during queue waits                                |
-| Every streamed token causes heavy render          | 60 ms batching, plain text while streaming                            | Less reconciliation/Markdown parsing                                 |
-| Hidden main window + extra task widget            | Persistent single panel                                               | Stop/status remain reachable                                         |
-| Developer extensions/browser discovery on startup | Remove extension startup; defer browser/model work                    | Less startup work and loaded code                                    |
-| Full recording retained in memory                 | Incremental disk chunks with backpressure                             | Bounded video memory                                                 |
-| Late async results revive cancelled UI            | Abort registry + request epoch guards                                 | Stops stale completion and stuck loading                             |
-
-## What the limits mean
-
-The app enforces a local guard of 30 RPM / 16k TPM independently for each model. One request can start immediately; the next waits only if spacing, budget, or cooldown requires it. There is no 30-call preflight tax. At the RPM ceiling the theoretical allowance is 30 generations per model per minute, subject to token budget, response time, and Google's actual quota. This is not a measured throughput claim.
-
-Input/media token estimates are conservative heuristics with output reservations, then reconciled against actual usage. They cannot guarantee exact server TPM accounting. The scheduler correctly handles server 429 responses, and only fails over once before output. Project quotas may also limit both models together or include per-day limits.
-
-Google documents quotas as project-level and model-dependent: [Gemini API rate limits](https://ai.google.dev/gemini-api/docs/rate-limits). Hosted model capabilities are documented in [Gemma on the Gemini API](https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api).
+- Separate aggregate Groq and per-model Google quotas; 30 RPM / 16k TPM local guards.
+- Lightweight local capacity checks, cooldown recovery, and no provider mixing after partial output.
+- Local prompt/media estimates reconciled with actual usage.
+- One-second dispatch spacing only for closely spaced calls; no unconditional post-response wait.
+- Bounded recent text and one current screenshot.
+- JPEG analysis images, local screenshot previews, bounded media metadata.
+- 60 ms text batching and Markdown parsing after streaming.
+- Deferred model/native/browser work during startup.
+- Incremental recording writes with memory backpressure.
+- Immediate local audio-stop path and asynchronous network cancellation.
 
 ## Verification
 
-- 142 focused regression/integration tests passed (17 files).
-- Main and renderer TypeScript checks passed.
-- Production Electron main/preload/renderer bundles built.
-- Browser smoke: local command bypass, streaming, partial-response cancellation, microphone control states, settings, screenshot analysis selection, recording chunk persistence, track release, audio review, window-control wiring, and 360/460/820 px layouts.
-- Windows System.Speech helper compiled successfully; one installed recognizer detected. The check did not activate the microphone.
+The focused regression suite passes 168 tests across 19 files. Coverage includes:
 
-## Dependency cleanup
+- Google transcription setup and PCM forwarding;
+- wake-name routing and local Stop without a name;
+- Google TTS request and returned-audio handling;
+- aborting TTS and suppressing late audio;
+- transcription reconnection and disabling pending reconnect;
+- provider-mode isolation, 30 RPM crossover, quota cooldown/recovery;
+- partial-stream handling and no fallback after output;
+- bounding-box validation and Qwen output through the real action parser;
+- existing local tools, cancellation, model, recording, and configuration regressions.
 
-Removed seven unused direct dependencies after searching retained renderer/main sources:
+Browser and native verification artifacts are generated by:
+`pnpm test:assistant-ui`, `pnpm test:assistant-native`, and `pnpm profile:assistant`.
+Browser media is synthetic and backend responses are mocked. Native checks do not enable the microphone or capture the desktop.
 
-- `@emotion/react`, `@emotion/styled`
-- `formik`
-- `react-countdown`, `react-countup`
-- `electron-debug`, `electron-devtools-installer`
+The prior implementation emitted 349,479 renderer asset bytes. This revision adds the Google audio capture/playback client and refined UI. Final measurements belong in the generated performance.json; asset size is not a memory or real API latency measurement. The original pre-redesign reference was 970,811 emitted renderer asset bytes.
 
-The lockfile importers were updated without upgrading other packages. Frozen offline lockfile validation passed. Unreferenced snapshots can remain in the lockfile until a future full pruning pass; removing a direct dependency does not imply every shared transitive dependency disappeared.
+No claim is made that synthetic tests establish Google/Groq time-to-first-token, real screenshot timing, or recognition accuracy. Those release measurements remain in [ROADMAP.md](ROADMAP.md).
 
-Retained deliberately: React/Markdown/icons for the new panel, SDK/action parser and native/browser operators, Sharp/native permission modules used elsewhere, and compatibility components still referenced by source/type checks. OpenAI/Jimp dependencies remain in shared upstream SDK code; the app's Google transport does not make OpenAI calls.
+## Recorded local measurements
 
-Recommended next cleanup: retire unreachable legacy pages/voice UI and remote operator adapters, then prune their Radix/form libraries and ws dependencies; split the Google transport from the legacy SDK to remove unused provider code; deduplicate native permission packages after cross-platform tests. These removals need package/installer checks rather than deleting dependencies still referenced by retained source.
+One Windows development-machine run on 2026-10-22:
 
-## Measurements still required before rollout
+| Measurement                                       | Result                          |
+| ------------------------------------------------- | ------------------------------- |
+| Renderer assets                                   | 358,408 bytes                   |
+| Compared with original 970,811-byte baseline      | 63.1% smaller                   |
+| Browser render-to-ready                           | 185 ms                          |
+| Native hidden startup-to-ready                    | 3577 ms                         |
+| Local classification, 100,000 samples             | 0.00118 ms mean                 |
+| Browser / native runtime errors                   | 0 / 0                           |
+| Speech-onset interruption                         | Passed with simulated PCM input |
+| Native module, right-edge docking, expand/restore | Passed                          |
 
-Real Google time-to-first-token and quota behavior; actual screenshot latency at 1080p/4K and multiple DPI settings; microphone recognition accuracy and barge-in with speakers; screen recording on all target OSes; native desktop cancellation under slow applications; long-session Electron RSS/CPU; signed installer startup and permissions.
+Browser timings exclude Electron startup and provider latency. Native working-set sum was 661,532 KB, including shared pages counted in multiple processes; this is not unique RSS or a before/after memory claim. Browser capture/playback and all API responses were simulated. No live provider calls or real microphone recordings were used in these checks.
 
-Existing automated tests demonstrate architecture and state behavior. They do not substitute for these device and provider measurements.
+## Dependencies
+
+No additional runtime package is required: the Google STT client uses the existing ws dependency, provider transports use native fetch, and microphone/playback use Web Audio. The seven unused direct dependencies removed in the previous release remain removed.
+
+Recommended next cleanup: retire unreferenced legacy offline speech and conversational-Live UI, then remove unused adapters/UI libraries after clean-install checks. Retain ws for Google speech. Shared upstream SDK modules still use OpenAI/Jimp imports; the new transport does not call OpenAI.
+
+## Provider references
+
+- [Groq Qwen 3.8 27B](https://console.groq.com/docs/model/qwen/qwen3.8-27b)
+- [Groq vision](https://console.groq.com/docs/vision)
+- [Groq rate limits](https://console.groq.com/docs/rate-limits)
+- [Google Live transcription](https://ai.google.dev/gemini-api/docs/live-api/live-transcribe)
+- [Google text-to-speech](https://ai.google.dev/gemini-api/docs/speech-generation)

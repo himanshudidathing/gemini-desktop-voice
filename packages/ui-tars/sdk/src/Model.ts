@@ -46,6 +46,8 @@ export interface UITarsModelConfig extends OpenAIChatCompletionCreateParams {
     failover: boolean;
   }) => void;
   onWait?: (ms: number) => void;
+  providers?: import('./providers').ProviderSettings;
+  onVision?: (vision: import('./vision').VisionResult) => void;
   /** Whether to use OpenAI Response API instead of Chat Completions API */
   useResponsesApi?: boolean;
 }

@@ -3,7 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'),
   path = require('node:path');
 (async () => {
-  const env = { ...process.env, GEMINI_START_HIDDEN: '1', GEMINI_API_KEY: '' };
+  // Isolate provider settings from the shell (AI tooling may define an unrelated MODEL).
+  const env = {
+    ...process.env,
+    GEMINI_START_HIDDEN: '1',
+    GEMINI_API_KEY: '',
+    GROQ_API_KEY: '',
+    MODEL: 'GOOGLE',
+    GEMINI_MODEL: 'gemma-4-31b-it',
+    GROQ_MODEL: 'qwen/qwen3.8-27b',
+    GOOGLE_STT_MODEL: 'gemini-3.5-transcribe-live',
+    GOOGLE_TTS_MODEL: 'gemini-3.8-flash-lite-tts',
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   const start = Date.now();
   const app = await electron.launch({

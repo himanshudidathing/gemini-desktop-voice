@@ -10,6 +10,11 @@ type GeminiDefaults = {
   liveModelName: string;
   assistantName: string;
   voiceName: VoiceName;
+  providerMode: 'GOOGLE' | 'GROQ' | 'BOTH';
+  groqApiKey: string;
+  groqModel: string;
+  speechInputModel: string;
+  speechOutputModel: string;
 };
 
 export function resolveGeminiEnvironment(environment: NodeJS.ProcessEnv) {
@@ -19,6 +24,11 @@ export function resolveGeminiEnvironment(environment: NodeJS.ProcessEnv) {
     liveModelName: DEFAULT_LIVE_MODEL,
     assistantName: DEFAULT_ASSISTANT_NAME,
     voiceName: 'Aoede',
+    providerMode: 'GOOGLE',
+    groqApiKey: '',
+    groqModel: 'qwen/qwen3.8-27b',
+    speechInputModel: 'gemini-3.5-transcribe-live',
+    speechOutputModel: 'gemini-3.8-flash-lite-tts',
   };
   const overrides: Partial<GeminiDefaults> = {};
   const model = (key: string) => {
@@ -47,6 +57,22 @@ export function resolveGeminiEnvironment(environment: NodeJS.ProcessEnv) {
   if (liveModel) overrides.liveModelName = liveModel;
   if (name) overrides.assistantName = name;
   if (voice) overrides.voiceName = voice as VoiceName;
+  const provider = environment.MODEL?.trim().toUpperCase();
+  if (provider && !['GOOGLE', 'GROQ', 'BOTH'].includes(provider))
+    throw new Error('MODEL must be GOOGLE, GROQ, or BOTH.');
+  if (provider)
+    overrides.providerMode = provider as GeminiDefaults['providerMode'];
+  if (environment.GROQ_API_KEY?.trim())
+    overrides.groqApiKey = environment.GROQ_API_KEY.trim();
+  if (environment.GROQ_MODEL?.trim()) {
+    if (!/^[a-zA-Z0-9._/-]{1,120}$/.test(environment.GROQ_MODEL.trim()))
+      throw new Error('GROQ_MODEL is invalid.');
+    overrides.groqModel = environment.GROQ_MODEL.trim();
+  }
+  const input = model('GOOGLE_STT_MODEL'),
+    output = model('GOOGLE_TTS_MODEL');
+  if (input) overrides.speechInputModel = input;
+  if (output) overrides.speechOutputModel = output;
   return { defaults: { ...defaults, ...overrides }, overrides };
 }
 

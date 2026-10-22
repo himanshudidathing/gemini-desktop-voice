@@ -95,3 +95,23 @@ describe('Gemini environment configuration', () => {
     ).toEqual({});
   });
 });
+
+it('keeps Google speech independent of Groq-only reasoning selection', () => {
+  const result = resolveGeminiEnvironment({
+    MODEL: 'GROQ',
+    GROQ_API_KEY: 'groq-test',
+    GROQ_MODEL: 'qwen/qwen3.8-27b',
+    GOOGLE_STT_MODEL: 'gemini-3.5-transcribe-live',
+    GOOGLE_TTS_MODEL: 'gemini-3.8-flash-lite-tts',
+  });
+  expect(result.defaults.providerMode).toBe('GROQ');
+  expect(result.defaults.groqApiKey).toBe('groq-test');
+  expect(result.defaults.speechInputModel).toBe('gemini-3.5-transcribe-live');
+  expect(result.defaults.speechOutputModel).toBe('gemini-3.8-flash-lite-tts');
+});
+it('rejects unsupported provider modes and malformed Groq IDs', () => {
+  expect(() => resolveGeminiEnvironment({ MODEL: 'GROK' })).toThrow('MODEL');
+  expect(() => resolveGeminiEnvironment({ GROQ_MODEL: 'not a model' })).toThrow(
+    'GROQ_MODEL',
+  );
+});

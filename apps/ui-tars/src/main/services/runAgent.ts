@@ -15,6 +15,7 @@ import {
   getGeminiSystemPrompt,
 } from '../shared/modelProviders';
 import { abortable } from './operations';
+import { desktopText } from '../shared/assistant';
 
 export const runAgent = async (
   setState: (state: Partial<AppState>) => void,
@@ -23,6 +24,7 @@ export const runAgent = async (
     onProgress?: (text: string) => void;
     onRoute?: (model: string, reason: string) => void;
     model?: string;
+    onVision?: (vision: import('@ui-tars/sdk/core').VisionResult) => void;
   },
 ) => {
   const settings = SettingStore.getStore();
@@ -69,6 +71,12 @@ export const runAgent = async (
     ...getLocalModelConfig(settings),
     model: options?.model || settings.vlmModelName,
     max_tokens: 768,
+    providers: {
+      mode: settings.providerMode || 'GOOGLE',
+      groqApiKey: settings.groqApiKey || '',
+      groqModel: settings.groqModel || 'qwen/qwen3.8-27b',
+    },
+    onVision: options?.onVision,
     onRoute: (r: { model: string; reason: string }) =>
       options?.onRoute?.(r.model, r.reason),
     onWait: (ms: number) =>
@@ -104,8 +112,7 @@ export const runAgent = async (
       );
       setState({ status: data.status, messages: bounded });
       const last = data.conversations.at(-1);
-      if (last?.from === 'gpt')
-        options?.onProgress?.(last.value || 'Executing action…');
+      if (last?.from === 'gpt') options?.onProgress?.(desktopText(last));
       else if (last?.screenshotBase64)
         options?.onProgress?.('Reading the current screen…');
     },

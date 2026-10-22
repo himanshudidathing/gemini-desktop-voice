@@ -1,44 +1,38 @@
-# Implementation priorities and release gates
+# Implementation and release priorities
 
-## P0 — implemented
+## Implemented
 
-- Authoritative local command router ahead of credentials, busy checks, screenshots, and model work.
-- Offline Windows microphone recognition with assistant-name activation and local spoken acknowledgements.
-- One cancellation registry for generation, queues, analysis/capture, and uploads; recording/speech stop integration.
-- Request IDs/epochs preventing late events from reviving cancelled requests.
-- Local screenshot/recording tools, previews, status, persisted files, and bounded recording memory.
-- Independent 26B/31B budgets, local token tracking, no preflights, capability-aware selection and bounded failover.
-- Separate streaming conversation route and explicit screenshot/desktop modes.
-- Right-side dark panel with native width/minimize controls, inline settings/errors/progress, and reduced-motion support.
-- Context/image caps, screenshot metadata reuse, deferred startup work, and seven direct dependency removals.
-- Unit/integration tests, production build, type checks, browser interaction tests, local profiling harness.
+- Restore Google voice as the only active sidebar speech path: continuous Google transcription, local text routing, and Google TTS for Gemma/Groq replies.
+- Keep microphone input active during playback with acoustic echo cancellation; interrupt playback locally on speech onset, Stop, or Cancel.
+- Add bounded reconnect for established Google transcription sessions and reject late audio after cancellation.
+- Add MODEL=GOOGLE/GROQ/BOTH, independent credentials, and editable model/voice settings.
+- Use Groq Qwen 3.8 27B first in hybrid mode, with local capacity checks, cooldowns, automatic recovery, and Google fallback before output.
+- Validate Qwen screenshot metadata and bounding boxes; use detected targets in the native action pipeline.
+- Preserve local tools, operation cancellation, token estimation, bounded context, and recording backpressure.
+- Refine the panel's spacing, type scale, neutral palette, navigation, onboarding, microphone meter, and screenshot overlays.
+- Add protocol, quota, fallback, cancellation, environment, vision, and browser regression coverage.
 
-## P0 — release validation
+## P0: deployment validation
 
-Run these gates with the intended Google project and target hardware before distributing a production installer:
+1. Add real Google/Groq project keys locally and verify access to the configured transcription, TTS, Gemma, and Qwen models.
+2. Measure actual speech-end-to-transcript, first token, TTS-first-audio, screenshot latency, and failover under provider 429/5xx conditions.
+3. Test voice with real speakers/headphones, accents/languages, noise, microphone disconnect, and repeated barge-in. Tune local activity thresholds from recordings obtained with consent.
+4. Test grounding accuracy on a fixed annotated screen set before relying on automated clicks. Include tiny targets, overlapping windows, multiple DPI settings, and uncertain detections.
+5. Validate cancellation, recordings, and panel restore on target OSes and hardware. Run an hour-long repeated-task soak.
+6. Validate a clean install and signed packaging before broad distribution.
 
-1. Confirm both Gemma models and audio transcription access. Measure first-token/total latency, usage reconciliation, and 429/Retry-After behavior.
-2. Enable offline voice on a real microphone; test all commands, name-only activation, speaker echo, low confidence, microphone disconnect, and repeated enable/disable.
-3. Run desktop actions in a disposable workspace. Cancel before/after capture, during pointer movement, after key down, while queued, and during slow browser navigation. Verify no subsequent action is issued.
-4. Record and stop repeatedly; interrupt source permission/setup, test disk failure/low space and the ten-minute/512 MB caps.
-5. Verify right-edge bounds, minimize/restore, close/reopen from tray, DPI/monitor changes, and keyboard access on each target OS.
-6. Soak for an hour with repeated requests/cancellation/captures; record peak/steady RSS, CPU, handles, and open media tracks.
+## P1: measurements-driven hardening
 
-Native actions already dispatched to an OS cannot be reversed. Verify prevention of later steps and released input state.
+- Stream Google TTS audio if measured time-to-first-audio justifies the extra buffering/protocol work; current TTS uses a bounded WAV response.
+- Improve confidence handling using grounding accuracy measurements; model confidence is not calibrated.
+- Persist/share quota counters only if multiple app processes must share a strict local budget.
+- Move image encoding to a worker if real capture profiling shows UI/main-thread stalls.
+- Remove unreferenced legacy offline/Live UI and SDK/provider adapters after packaging tests. Keep ws: the active Google transcription client uses it.
 
-## P1 — performance and platform hardening
+## P2: distribution
 
-- Profile actual high-DPI capture/encode stages; move costly image transformations to a worker when measurements justify it.
-- Separate Google-only SDK transport from upstream compatibility code; remove unreachable renderer/remote/Live modules after installer regression coverage.
-- Persist rate counters or coordinate by project if multiple app processes must share a strict local budget.
-- Add macOS/Linux offline speech adapters behind the same text/command contract. Do not reintroduce silent cloud microphone fallback.
-- Improve conservative token estimates using model-specific local tokenizer/media metadata when available.
-- Collect opt-in local timing diagnostics without message content or credentials.
+- Sign installers, validate upgrades, and configure a fork-owned update feed.
+- Broaden native integration CI where device permissions allow.
+- Publish measured performance and model availability with releases.
 
-## P2 — packaging and release quality
-
-- Verify clean installs on supported platforms, sign installers, and create a fork-owned update feed.
-- Add native OS integration CI where permissions/devices permit it, plus accessibility checks for the panel.
-- Expose measured latency and operational limits in release notes; avoid unverified performance or availability promises.
-
-This roadmap distinguishes implemented functionality from hardware/provider release gates. It does not claim a production certification from mocked tests.
+Automated tests verify implementation and state behavior. They do not certify live model accuracy, account access, or microphone performance.

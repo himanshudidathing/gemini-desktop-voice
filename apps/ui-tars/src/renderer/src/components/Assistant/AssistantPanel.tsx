@@ -6,7 +6,6 @@ import {
   Camera,
   Check,
   Circle,
-  Cpu,
   Expand,
   FolderOpen,
   Image,
@@ -16,8 +15,6 @@ import {
   Minus,
   Paperclip,
   Settings2,
-  ShieldCheck,
-  Sparkles,
   Square,
   Trash2,
   X,
@@ -30,6 +27,8 @@ import {
 } from '@main/shared/assistant';
 import { Operator, type LocalStore } from '@main/store/types';
 import { useRecording } from './useRecording';
+import { useGoogleVoice } from './useGoogleVoice';
+import type { VisionResult } from '@ui-tars/sdk/core';
 import './assistant.css';
 type Message = {
   id: string;
@@ -40,11 +39,13 @@ type Message = {
 };
 const historyKey = 'gemini-assistant-history-v2';
 const shortModel = (m?: string) =>
-  m?.includes('26b')
-    ? 'Gemma 26B'
-    : m?.includes('31b')
-      ? 'Gemma 31B'
-      : m || 'Assistant';
+  m?.includes('qwen')
+    ? 'Qwen 3.8 · Groq'
+    : m?.includes('26b')
+      ? 'Gemma 26B'
+      : m?.includes('31b')
+        ? 'Gemma 31B'
+        : m || 'Assistant';
 function readHistory(): Message[] {
   try {
     const saved = JSON.parse(localStorage.getItem(historyKey) || '[]');
@@ -82,8 +83,12 @@ export default function AssistantPanel() {
     [model, setModel] = useState<string>();
   const [error, setError] = useState(''),
     [notice, setNotice] = useState('');
-  const [voice, setVoice] = useState('off'),
-    [heard, setHeard] = useState('');
+  const speech = useGoogleVoice(setError);
+  const speechRef = useRef(speech);
+  speechRef.current = speech;
+  const voice = speech.state;
+  const [heard, setHeard] = useState('');
+  const [visions, setVisions] = useState<Record<string, VisionResult>>({});
   const [artifacts, setArtifacts] = useState<MediaArtifact[]>([]);
   const [settings, setSettings] = useState<LocalStore>(),
     settingsRef = useRef(settings);
@@ -132,6 +137,7 @@ export default function AssistantPanel() {
     );
   }, []);
   const cancel = useCallback(() => {
+    speechRef.current.interrupt();
     uploadEpoch.current++;
     setUploading(false);
     flush();
@@ -168,11 +174,15 @@ export default function AssistantPanel() {
         )
           beginMessage(event.id, event.text);
       }
-      if (event.type === 'voice') {
-        setVoice(event.state);
-        if (event.state === 'error')
-          setError(event.text || 'Voice unavailable.');
-      }
+      if (event.type === 'vision' && event.imageId)
+        setVisions((all) =>
+          Object.fromEntries([
+            ...Object.entries(all)
+              .filter(([id]) => id !== event.imageId)
+              .slice(-23),
+            [event.imageId!, event.result],
+          ]),
+        );
       if (event.type === 'record-stop') recordingRef.current.stop();
       if (event.type === 'artifact') {
         setArtifacts((all) =>
@@ -385,6 +395,14 @@ export default function AssistantPanel() {
         vlmApiKey: settings.vlmApiKey.trim(),
         assistantName: settings.assistantName.trim(),
         operator: settings.operator,
+        providerMode: settings.providerMode || 'GOOGLE',
+        groqApiKey: settings.groqApiKey?.trim() || '',
+        groqModel: settings.groqModel?.trim() || 'qwen/qwen3.8-27b',
+        speechInputModel:
+          settings.speechInputModel?.trim() || 'gemini-3.5-transcribe-live',
+        speechOutputModel:
+          settings.speechOutputModel?.trim() || 'gemini-3.8-flash-lite-tts',
+        voiceName: settings.voiceName || 'Aoede',
       });
       setSaved(true);
       setNotice('Settings saved. No test request was sent.');
@@ -398,10 +416,14 @@ export default function AssistantPanel() {
       <header className="panel-titlebar">
         <div className="brand">
           <span className="brand-mark">
-            <Sparkles size={17} />
+            <span className="brand-glyph">
+              <i />
+              <i />
+              <i />
+            </span>
           </span>
           <span>
-            Gemini <span className="brand-light">Desktop</span>
+            Assistant <span className="brand-light">Desktop</span>
           </span>
         </div>
         <div className="window-actions">
@@ -443,7 +465,7 @@ export default function AssistantPanel() {
           className={tab === 'chat' ? 'selected' : ''}
           onClick={() => setTab('chat')}
         >
-          <MessageSquare size={14} /> Conversation
+          <MessageSquare size={14} /> Chat
         </button>
         <button
           className={tab === 'captures' ? 'selected' : ''}
@@ -465,17 +487,82 @@ export default function AssistantPanel() {
       <div className="connection-bar">
         <span className={'status-dot ' + (busy ? 'working' : '')} />
         <span>
-          {busy ? shortModel(model) + ' is working' : 'Your desktop, connected'}
+          {busy
+            ? shortModel(model)
+            : tab === 'settings'
+              ? 'Preferences'
+              : tab === 'captures'
+                ? 'Local library'
+                : messages.length
+                  ? 'Conversation'
+                  : 'New conversation'}
         </span>
         <span className="local-badge">
-          <ShieldCheck size={11} /> Local controls
+          <span className="provider-dot" />{' '}
+          {settings?.providerMode === 'BOTH'
+            ? 'Groq + Google'
+            : settings?.providerMode === 'GROQ'
+              ? 'Groq'
+              : 'Google'}
         </span>
       </div>
       {tab === 'settings' ? (
         <section className="panel-scroll settings-page">
-          <div className="section-eyebrow">PREFERENCES</div>
-          <h1>Make it yours.</h1>
-          <p className="muted">One workspace. Two models. Local controls.</p>
+          <div className="section-eyebrow">WORKSPACE</div>
+          <h1>Settings</h1>
+          <p className="muted">Your models, your voice, your preferences.</p>
+          <h2 className="settings-heading">Models & providers</h2>
+          <label className="field-label">
+            Provider
+            <select
+              aria-label="Provider mode"
+              value={settings?.providerMode || 'GOOGLE'}
+              onChange={(e) =>
+                settings &&
+                setSettings({
+                  ...settings,
+                  providerMode: e.target.value as LocalStore['providerMode'],
+                })
+              }
+            >
+              <option value="GOOGLE">Google</option>
+              <option value="GROQ">Groq</option>
+              <option value="BOTH">Groq + Google fallback</option>
+            </select>
+          </label>
+          <p className="field-help">
+            Hybrid uses Groq first and switches to Google when needed. Voice
+            always uses Google.
+          </p>
+          {settings?.providerMode !== 'GOOGLE' && (
+            <>
+              <label className="field-label">
+                Groq API key
+                <input
+                  aria-label="Groq API key"
+                  type="password"
+                  autoComplete="off"
+                  value={settings?.groqApiKey || ''}
+                  placeholder="gsk_…"
+                  onChange={(e) =>
+                    settings &&
+                    setSettings({ ...settings, groqApiKey: e.target.value })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                Groq model
+                <input
+                  aria-label="Groq model"
+                  value={settings?.groqModel || 'qwen/qwen3.8-27b'}
+                  onChange={(e) =>
+                    settings &&
+                    setSettings({ ...settings, groqModel: e.target.value })
+                  }
+                />
+              </label>
+            </>
+          )}
           <label className="field-label">
             Google API key
             <input
@@ -491,8 +578,28 @@ export default function AssistantPanel() {
             />
           </label>
           <p className="field-help">
-            Stored on this computer. Validated on your first real request.
+            Used for Google models and voice in every provider mode. Keys stay
+            on this computer.
           </p>
+          <h2 className="settings-heading">Voice</h2>
+          <label className="field-label">
+            Speaking voice
+            <select
+              aria-label="Speaking voice"
+              value={settings?.voiceName || 'Aoede'}
+              onChange={(e) =>
+                settings &&
+                setSettings({
+                  ...settings,
+                  voiceName: e.target.value as LocalStore['voiceName'],
+                })
+              }
+            >
+              {['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </label>
           <label className="field-label">
             Assistant name
             <input
@@ -530,34 +637,50 @@ export default function AssistantPanel() {
             {saved ? <Check size={15} /> : <Settings2 size={15} />}{' '}
             {saved ? 'Saved' : 'Save settings'}
           </button>
-          <div className="settings-card">
-            <Cpu size={18} />
-            <div>
-              <strong>Automatic model routing</strong>
-              <p>
-                Gemma 26B for conversation. Gemma 31B for screens and complex
-                work. Each has a local 30 RPM / 16k TPM budget. Capacity-aware
-                failover is shown in the conversation.
-              </p>
-            </div>
+          <div className="settings-note">
+            <AudioLines size={16} />
+            <p>
+              Google transcribes your microphone and reads model responses
+              aloud. Say your assistant's name to start; interrupt naturally or
+              say “Stop”.
+            </p>
           </div>
-          <div className="settings-card">
-            <Mic size={18} />
-            <div>
-              <strong>Voice stays local first</strong>
-              <p>
-                Windows speech recognition handles your microphone on this
-                device. Say “{settings?.assistantName || 'Gemini'}” before a
-                task. Stop and local controls work without the wake name.
-                Requires an installed Windows speech language pack.
-              </p>
-            </div>
-          </div>
-          <p className="field-help">
-            Responses use the installed Windows voice. Audio uploads are sent to
-            Gemini only when you choose a file. Native macOS/Linux speech
-            support is not yet included.
-          </p>
+          <details className="advanced-settings">
+            <summary>Advanced voice settings</summary>
+            <label className="field-label">
+              Google transcription model
+              <input
+                aria-label="Google transcription model"
+                value={
+                  settings?.speechInputModel || 'gemini-3.5-transcribe-live'
+                }
+                onChange={(e) =>
+                  settings &&
+                  setSettings({ ...settings, speechInputModel: e.target.value })
+                }
+              />
+            </label>
+            <label className="field-label">
+              Google speech model
+              <input
+                aria-label="Google speech model"
+                value={
+                  settings?.speechOutputModel || 'gemini-3.8-flash-lite-tts'
+                }
+                onChange={(e) =>
+                  settings &&
+                  setSettings({
+                    ...settings,
+                    speechOutputModel: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <p className="field-help">
+              Save and reconnect voice after changing these settings. Nonempty
+              .env values take precedence at startup.
+            </p>
+          </details>
           <button
             className="text-button danger-text"
             onClick={() => void submit('clear conversation')}
@@ -567,8 +690,8 @@ export default function AssistantPanel() {
         </section>
       ) : tab === 'captures' ? (
         <section className="panel-scroll captures-page">
-          <div className="section-eyebrow">ON YOUR COMPUTER</div>
-          <h1>Captured, privately.</h1>
+          <div className="section-eyebrow">WORKSPACE</div>
+          <h1>Captures</h1>
           <p className="muted">
             Screenshots and recordings stay local until you choose to analyze a
             screenshot.
@@ -598,7 +721,30 @@ export default function AssistantPanel() {
           {artifacts.map((a) => (
             <article className="capture-card" key={a.id}>
               {a.preview && (
-                <img src={a.preview} alt="Captured screen preview" />
+                <div className="vision-preview">
+                  <img src={a.preview} alt="Captured screen preview" />
+                  {visions[a.id] && (
+                    <svg
+                      viewBox="0 0 1000 1000"
+                      preserveAspectRatio="none"
+                      aria-label="Detected UI element bounding boxes"
+                    >
+                      {visions[a.id].elements.map((e) => (
+                        <g key={e.id}>
+                          <title>
+                            {e.label} · {Math.round(e.confidence * 100)}%
+                          </title>
+                          <rect
+                            x={e.box[0]}
+                            y={e.box[1]}
+                            width={e.box[2] - e.box[0]}
+                            height={e.box[3] - e.box[1]}
+                          />
+                        </g>
+                      ))}
+                    </svg>
+                  )}
+                </div>
               )}
               <div className="capture-meta">
                 <strong>
@@ -610,6 +756,19 @@ export default function AssistantPanel() {
                     : 'PNG · saved locally'}
                 </small>
               </div>
+              {visions[a.id] && (
+                <details className="detected-controls">
+                  <summary>
+                    {visions[a.id].elements.length} detected controls
+                  </summary>
+                  {visions[a.id].elements.map((e) => (
+                    <div key={e.id}>
+                      <span>{e.label}</span>
+                      <small>{Math.round(e.confidence * 100)}%</small>
+                    </div>
+                  ))}
+                </details>
+              )}
               <div className="capture-actions">
                 <button onClick={() => safe(api.reveal(a.id))}>
                   <FolderOpen size={13} /> Show file
@@ -643,21 +802,35 @@ export default function AssistantPanel() {
         >
           {!messages.length && (
             <section className="welcome">
-              <div className="welcome-symbol">
-                <Sparkles size={25} />
-                <span />
-              </div>
-              <div className="section-eyebrow">YOUR DESKTOP ASSISTANT</div>
+              <div className="welcome-kicker">LET'S GET STARTED</div>
               <h1>
-                A little less effort.
+                What are we
                 <br />
-                <span>A lot more done.</span>
+                working on?
               </h1>
               <p>
-                Ask a question, explore your screen,
+                Ask a question, talk through an idea,
                 <br />
-                or just say what you need.
+                or bring your screen into the conversation.
               </p>
+              {settings &&
+                !(settings.providerMode === 'GROQ'
+                  ? settings.groqApiKey
+                  : settings.vlmApiKey || settings.groqApiKey) && (
+                  <button
+                    className="connect-card"
+                    onClick={() => setTab('settings')}
+                  >
+                    <span className="connect-icon">
+                      <Settings2 size={18} />
+                    </span>
+                    <span>
+                      <strong>Connect your assistant</strong>
+                      <small>Add your API keys to get started</small>
+                    </span>
+                    <ArrowUpRight size={15} />
+                  </button>
+                )}
               <div className="welcome-tools">
                 <button onClick={() => void submit('take screenshot')}>
                   <span className="tool-icon">
@@ -665,7 +838,7 @@ export default function AssistantPanel() {
                   </span>
                   <span>
                     <strong>Take a screenshot</strong>
-                    <small>Capture instantly · stays local</small>
+                    <small>Save a copy to your computer</small>
                   </span>
                   <ArrowUpRight size={15} />
                 </button>
@@ -676,12 +849,12 @@ export default function AssistantPanel() {
                     input.current?.focus();
                   }}
                 >
-                  <span className="tool-icon violet">
-                    <Sparkles size={18} />
+                  <span className="tool-icon">
+                    <Image size={18} />
                   </span>
                   <span>
-                    <strong>Understand my screen</strong>
-                    <small>Get context with Gemma 31B</small>
+                    <strong>Explore my screen</strong>
+                    <small>Find answers in what you see</small>
                   </span>
                   <ArrowUpRight size={15} />
                 </button>
@@ -691,12 +864,12 @@ export default function AssistantPanel() {
                     input.current?.focus();
                   }}
                 >
-                  <span className="tool-icon gold">
+                  <span className="tool-icon">
                     <MessageSquare size={18} />
                   </span>
                   <span>
                     <strong>Think it through</strong>
-                    <small>Quick answers, thoughtful help</small>
+                    <small>Start with a question or an idea</small>
                   </span>
                   <ArrowUpRight size={15} />
                 </button>
@@ -712,7 +885,7 @@ export default function AssistantPanel() {
                 {m.role === 'assistant' ? (
                   <>
                     <span className="mini-mark">
-                      <Sparkles size={12} />
+                      <span className="response-mark" />
                     </span>
                     {shortModel(m.model)}
                   </>
@@ -748,7 +921,7 @@ export default function AssistantPanel() {
               <img src={artifacts[0].preview} alt="Latest screenshot" />
               <div>
                 <strong>Screenshot saved</strong>
-                <span>Local · no model request</span>
+                <span>Saved on this computer</span>
                 <button onClick={() => setTab('captures')}>
                   View capture <ArrowUpRight size={12} />
                 </button>
@@ -794,137 +967,164 @@ export default function AssistantPanel() {
         </div>
       )}
       <footer className="composer-zone">
-        <div className="voice-strip">
+        <div
+          className={
+            'voice-strip ' + (voice === 'listening' ? 'voice-active' : '')
+          }
+        >
           <button
-            className={
-              'voice-toggle ' + (voice === 'listening' ? 'enabled' : '')
-            }
+            className="voice-toggle"
             aria-label={
               voice === 'off' || voice === 'error'
                 ? 'Enable microphone'
                 : 'Disable microphone'
             }
-            onClick={() => safe(api.toggleVoice())}
+            onClick={() => safe(speech.toggle())}
           >
             {voice === 'listening' ? (
+              <Mic size={16} />
+            ) : voice === 'starting' ? (
               <AudioLines size={16} />
             ) : (
-              <MicOff size={15} />
+              <MicOff size={16} />
             )}
             <span>
-              {voice === 'listening'
-                ? 'Listening locally'
-                : voice === 'starting'
-                  ? 'Starting voice…'
-                  : 'Microphone off'}
+              {voice === 'starting'
+                ? 'Connecting voice'
+                : speech.speaking === 'playing'
+                  ? 'Speaking'
+                  : speech.speaking === 'preparing'
+                    ? 'Preparing voice'
+                    : voice === 'listening'
+                      ? 'Listening'
+                      : 'Talk to your assistant'}
             </span>
           </button>
-          <span>
-            {voice === 'listening'
-              ? 'Say “' + (settings?.assistantName || 'Gemini') + '”'
-              : 'On-device voice'}
-          </span>
-        </div>
-        {heard && voice === 'listening' && (
-          <div className="heard">“{heard}”</div>
-        )}
-        <div className={'composer ' + (busy ? 'composer-busy' : '')}>
-          {imageId && (
-            <div className="attached-image">
-              <Image size={13} /> Screenshot attached
-              <button
-                aria-label="Remove screenshot"
-                onClick={() => setImageId(undefined)}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )}
-          <textarea
-            ref={input}
-            aria-label="Message assistant"
-            placeholder="Ask anything, or give your desktop a task…"
-            value={draft}
-            maxLength={16000}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (
-                e.key === 'Enter' &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                e.preventDefault();
-                void submit();
+          {voice === 'listening' ? (
+            <div
+              className={
+                'voice-meter ' + (speech.speaking !== 'idle' ? 'speaking' : '')
               }
-            }}
-          />
-          <div className="composer-actions">
-            <select
-              aria-label="Request mode"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as AssistantMode)}
+              aria-label="Voice activity"
             >
-              <option value="auto">Auto · smart routing</option>
-              <option value="chat">Conversation</option>
-              <option value="screen">Analyze screen</option>
-              <option value="computer">Desktop task</option>
-            </select>
-            <div className="composer-buttons">
-              <button
-                aria-label="Take screenshot"
-                title="Take screenshot locally"
-                onClick={() => void submit('take screenshot')}
-              >
-                <Camera size={16} />
-              </button>
-              <button
-                aria-label={
-                  recording.state === 'off'
-                    ? 'Start screen recording'
-                    : 'Stop screen recording'
-                }
-                title="Screen recording"
-                onClick={() =>
-                  recording.state === 'off'
-                    ? void recording.start()
-                    : recording.stop()
-                }
-              >
-                <Circle
-                  size={15}
-                  className={recording.state === 'recording' ? 'red' : ''}
+              {[0.35, 0.65, 1, 0.75, 0.4, 0.8, 0.55, 0.95, 0.6].map((h, i) => (
+                <i
+                  key={i}
+                  style={{
+                    height: 3 + speech.level * h * 18,
+                    animationDelay: i * -0.09 + 's',
+                  }}
                 />
-              </button>
-              <button
-                aria-label="Upload audio for transcription"
-                title="Transcribe audio with Gemini"
-                disabled={uploading}
-                onClick={() => fileInput.current?.click()}
-              >
-                <Paperclip size={15} />
-              </button>
-              {busy || uploading ? (
-                <button
-                  className="stop-button"
-                  aria-label="Stop all activity"
-                  title="Stop (Esc)"
-                  onClick={cancel}
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              ) : (
-                <button
-                  className="send-button"
-                  aria-label="Send message"
-                  disabled={!draft.trim()}
-                  onClick={() => void submit()}
-                >
-                  <ArrowUp size={17} />
-                </button>
-              )}
+              ))}
             </div>
-          </div>
+          ) : (
+            <span className="voice-provider">Google voice</span>
+          )}
         </div>
+        {(speech.transcript || heard) && voice === 'listening' && (
+          <div className="heard">{speech.transcript || heard}</div>
+        )}
+        {tab === 'chat' && (
+          <>
+            <div className={'composer ' + (busy ? 'composer-busy' : '')}>
+              {imageId && (
+                <div className="attached-image">
+                  <Image size={13} /> Screenshot attached
+                  <button
+                    aria-label="Remove screenshot"
+                    onClick={() => setImageId(undefined)}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+              <textarea
+                ref={input}
+                aria-label="Message assistant"
+                placeholder="Message your assistant…"
+                value={draft}
+                maxLength={16000}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    void submit();
+                  }
+                }}
+              />
+              <div className="composer-actions">
+                <select
+                  aria-label="Request mode"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as AssistantMode)}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="chat">Conversation</option>
+                  <option value="screen">Analyze screen</option>
+                  <option value="computer">Desktop task</option>
+                </select>
+                <div className="composer-buttons">
+                  <button
+                    aria-label="Take screenshot"
+                    title="Take screenshot locally"
+                    onClick={() => void submit('take screenshot')}
+                  >
+                    <Camera size={16} />
+                  </button>
+                  <button
+                    aria-label={
+                      recording.state === 'off'
+                        ? 'Start screen recording'
+                        : 'Stop screen recording'
+                    }
+                    title="Screen recording"
+                    onClick={() =>
+                      recording.state === 'off'
+                        ? void recording.start()
+                        : recording.stop()
+                    }
+                  >
+                    <Circle
+                      size={15}
+                      className={recording.state === 'recording' ? 'red' : ''}
+                    />
+                  </button>
+                  <button
+                    aria-label="Upload audio for transcription"
+                    title="Transcribe audio with Gemini"
+                    disabled={uploading}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <Paperclip size={15} />
+                  </button>
+                  {busy || uploading ? (
+                    <button
+                      className="stop-button"
+                      aria-label="Stop all activity"
+                      title="Stop (Esc)"
+                      onClick={cancel}
+                    >
+                      <Square size={14} fill="currentColor" />
+                    </button>
+                  ) : (
+                    <button
+                      className="send-button"
+                      aria-label="Send message"
+                      disabled={!draft.trim()}
+                      onClick={() => void submit()}
+                    >
+                      <ArrowUp size={17} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -935,20 +1135,26 @@ export default function AssistantPanel() {
             e.target.value = '';
           }}
         />
-        <div className="composer-status" role="status">
-          <span>
-            {uploading
-              ? 'Transcribing audio…'
-              : busy
-                ? status
-                : 'Local first. Thoughtfully connected.'}
-          </span>
-          {busy && (
-            <button onClick={cancel}>
-              Stop <kbd>Esc</kbd>
-            </button>
-          )}
-        </div>
+        {tab === 'chat' && (
+          <div className="composer-status" role="status">
+            <span>
+              {uploading
+                ? 'Transcribing audio…'
+                : busy
+                  ? status
+                  : voice === 'listening'
+                    ? 'Say “' +
+                      (settings?.assistantName || 'Gemini') +
+                      '” to start'
+                    : 'Enter to send · Shift + Enter for a new line'}
+            </span>
+            {busy && (
+              <button onClick={cancel}>
+                Stop <kbd>Esc</kbd>
+              </button>
+            )}
+          </div>
+        )}
       </footer>
     </main>
   );

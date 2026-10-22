@@ -23,6 +23,7 @@ vi.mock('electron', () => ({
   app: { on: vi.fn() },
   ipcMain: {
     handle: (name: string, fn: Function) => mocks.handlers.set(name, fn),
+    on: (name: string, fn: Function) => mocks.handlers.set(name, fn),
   },
 }));
 vi.mock('../env', () => ({ rendererUrl: '' }));
@@ -41,7 +42,7 @@ vi.mock('../ipcRoutes/agent', () => ({
   },
 }));
 vi.mock('@ui-tars/sdk/core', () => ({
-  googleRoutedGenerate: mocks.generate,
+  generateWithProviders: mocks.generate,
   getGoogleRestQuota: () => ({
     snapshot: () => ({ requests: 0, tokens: 0, queued: 0, waitMs: 0 }),
   }),
@@ -57,8 +58,8 @@ vi.mock('./localMedia', () => ({
   currentRecordingId: vi.fn(() => undefined),
   revealArtifact: vi.fn(),
 }));
-vi.mock('./localSpeech', () => ({
-  LocalSpeech: class {
+vi.mock('./googleVoice', () => ({
+  GoogleVoice: class {
     enabled = false;
     start() {
       this.enabled = true;

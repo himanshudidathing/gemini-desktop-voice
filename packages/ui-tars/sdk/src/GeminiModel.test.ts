@@ -182,3 +182,60 @@ describe('Google-only native Gemini transport', () => {
     ).toHaveProperty('inlineData');
   });
 });
+
+it('grounds a Groq vision target through the real action parser', async () => {
+  const image = new Jimp({ width: 16, height: 9, color: 0xffffffff });
+  const screenshot = (await image.getBuffer('image/png')).toString('base64');
+  const fetcher = vi.fn(async () =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            content: JSON.stringify({
+              summary: 'Select search',
+              elements: [
+                {
+                  id: 'search',
+                  label: 'Search',
+                  box: [100, 200, 500, 300],
+                  confidence: 0.95,
+                },
+              ],
+              nextAction: { type: 'click', targetId: 'search' },
+            }),
+          },
+        },
+      ],
+      usage: { total_tokens: 100 },
+    }),
+  );
+  const model = new GeminiModel({
+    model: 'gemma-4-31b-it',
+    apiKey: '',
+    fetch: fetcher,
+    providers: {
+      mode: 'GROQ',
+      groqApiKey: 'groq-parser-test',
+      groqModel: 'qwen/qwen3.8-27b',
+    },
+  });
+  const result = await model.invoke({
+    conversations: [
+      { from: 'human', value: 'Select search' },
+      { from: 'human', value: '<image>' },
+    ],
+    images: [screenshot],
+    screenContext: { width: 1600, height: 900 },
+    scaleFactor: 1,
+    uiTarsVersion: UITarsModelVersion.V1_0,
+  });
+  expect(result.parsedPredictions[0]).toMatchObject({
+    action_type: 'click',
+    action_inputs: {
+      start_box: '[0.3,0.25,0.3,0.25]',
+      start_coords: [480, 225],
+    },
+  });
+  expect(fetcher).toHaveBeenCalledOnce();
+});

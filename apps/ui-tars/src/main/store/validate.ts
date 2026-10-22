@@ -29,6 +29,21 @@ export const PresetSchema = z.object({
   voiceName: z.enum(['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir']).optional(),
   useResponsesApi: z.boolean().optional(),
 
+  providerMode: z.enum(['GOOGLE', 'GROQ', 'BOTH']).optional(),
+  groqApiKey: z.string().optional(),
+  groqModel: z
+    .string()
+    .regex(/^[a-zA-Z0-9._/-]{1,120}$/)
+    .optional(),
+  speechInputModel: z
+    .string()
+    .regex(/^gemini-[a-zA-Z0-9._-]+$/)
+    .optional(),
+  speechOutputModel: z
+    .string()
+    .regex(/^gemini-[a-zA-Z0-9._-]+$/)
+    .optional(),
+
   // Chat Settings
   operator: z.nativeEnum(Operator),
   language: z.enum(['zh', 'en']).optional(),

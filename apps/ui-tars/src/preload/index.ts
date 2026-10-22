@@ -23,6 +23,12 @@ const electronHandler = {
       ipcRenderer.invoke('assistant:submit', request),
     cancel: (): Promise<void> => ipcRenderer.invoke('assistant:cancel'),
     toggleVoice: (): Promise<void> => ipcRenderer.invoke('assistant:voice'),
+    startVoice: (): Promise<void> =>
+      ipcRenderer.invoke('assistant:voice-start'),
+    stopVoice: (): Promise<void> => ipcRenderer.invoke('assistant:voice-stop'),
+    bargeIn: (): Promise<void> => ipcRenderer.invoke('assistant:voice-barge'),
+    voiceAudio: (bytes: Uint8Array): void =>
+      ipcRenderer.send('assistant:voice-audio', bytes),
     window: (action: 'minimize' | 'expand' | 'close'): Promise<void> =>
       ipcRenderer.invoke('assistant:window', action),
     startRecording: (): Promise<string> =>
