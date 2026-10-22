@@ -1,0 +1,28 @@
+name: Gemini Desktop checks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
+        with:
+          node-version: '22'
+      - name: Install workspace dependencies
+        run: npx --yes pnpm@9.10.0 install --filter "ui-tars-desktop..." --frozen-lockfile --ignore-scripts
+      - name: Build workspace packages
+        run: npx --yes pnpm@9.10.0 --filter "ui-tars-desktop^..." run build
+      - name: Run Gemini and voice tests
+        run: npx --yes pnpm@9.10.0 test:gemini
+      - name: Typecheck desktop
+        run: npx --yes pnpm@9.10.0 --filter ui-tars-desktop typecheck
+      - name: Build desktop bundles
+        run: npx --yes pnpm@9.10.0 --filter ui-tars-desktop build:dist
