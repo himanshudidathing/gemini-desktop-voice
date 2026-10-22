@@ -2,212 +2,132 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import assert from 'assert';
-
 import { logger } from '@main/logger';
 import { StatusEnum } from '@ui-tars/shared/types';
-import { type ConversationWithSoM } from '@main/shared/types';
-import { GUIAgent, type GUIAgentConfig } from '@ui-tars/sdk';
-import { markClickPosition } from '@main/utils/image';
-import { UTIOService } from '@main/services/utio';
-import { NutJSElectronOperator } from '../agent/operator';
-import { DefaultBrowserOperator } from '@ui-tars/operator-browser';
-import { showPredictionMarker } from '@main/window/ScreenMarker';
+import { GUIAgent } from '@ui-tars/sdk';
+import { GeminiModel } from '@ui-tars/sdk/core';
 import { SettingStore } from '@main/store/setting';
 import { AppState, Operator } from '@main/store/types';
 import { GUIAgentManager } from '../ipcRoutes/agent';
-import { checkBrowserAvailability } from './browserCheck';
-import {
-  getModelVersion,
-  beforeAgentRun,
-  afterAgentRun,
-  getLocalBrowserSearchEngine,
-} from '../utils/agent';
-import { GeminiModel } from '@ui-tars/sdk/core';
+import { getModelVersion, getLocalBrowserSearchEngine } from '../utils/agent';
 import {
   getLocalModelConfig,
   getGeminiSystemPrompt,
 } from '../shared/modelProviders';
+import { abortable } from './operations';
 
 export const runAgent = async (
-  setState: (state: AppState) => void,
+  setState: (state: Partial<AppState>) => void,
   getState: () => AppState,
+  options?: {
+    onProgress?: (text: string) => void;
+    onRoute?: (model: string, reason: string) => void;
+    model?: string;
+  },
 ) => {
-  logger.info('runAgent');
   const settings = SettingStore.getStore();
   const { instructions, abortController } = getState();
-  assert(instructions, 'instructions is required');
-
+  const signal = abortController?.signal;
+  if (!instructions || !signal)
+    throw new Error('A task and cancellation controller are required.');
+  const current = () =>
+    !signal.aborted && getState().abortController === abortController;
   if (
     ![Operator.LocalComputer, Operator.LocalBrowser].includes(settings.operator)
-  ) {
-    throw new Error(
-      'Gemini Desktop supports local computer and browser operators only.',
-    );
-  }
-  const language = settings.language ?? 'en';
-
-  logger.info('settings.operator', settings.operator);
-
-  const handleData: GUIAgentConfig<NutJSElectronOperator>['onData'] = async ({
-    data,
-  }) => {
-    const lastConv = getState().messages[getState().messages.length - 1];
-    const { status, conversations, ...restUserData } = data;
-    logger.info('[onGUIAgentData] status', status, conversations.length);
-
-    // add SoM to conversations
-    const conversationsWithSoM: ConversationWithSoM[] = await Promise.all(
-      conversations.map(async (conv) => {
-        const { screenshotContext, predictionParsed } = conv;
-        if (
-          lastConv?.screenshotBase64 &&
-          screenshotContext?.size &&
-          predictionParsed
-        ) {
-          const screenshotBase64WithElementMarker = await markClickPosition({
-            screenshotContext,
-            base64: lastConv?.screenshotBase64,
-            parsed: predictionParsed,
-          }).catch((e) => {
-            logger.error('[markClickPosition error]:', e);
-            return '';
-          });
-          return {
-            ...conv,
-            screenshotBase64WithElementMarker,
-          };
-        }
-        return conv;
-      }),
-    ).catch((e) => {
-      logger.error('[conversationsWithSoM error]:', e);
-      return conversations;
-    });
-
-    const {
-      screenshotBase64,
-      predictionParsed,
-      screenshotContext,
-      screenshotBase64WithElementMarker,
-      ...rest
-    } = conversationsWithSoM?.[conversationsWithSoM.length - 1] || {};
-    logger.info(
-      '[onGUIAgentData] ======data======\n',
-      predictionParsed,
-      screenshotContext,
-      rest,
-      status,
-      '\n========',
-    );
-
-    if (
-      settings.operator === Operator.LocalComputer &&
-      predictionParsed?.length &&
-      screenshotContext?.size &&
-      !abortController?.signal?.aborted
-    ) {
-      showPredictionMarker(predictionParsed, screenshotContext);
-    }
-
-    setState({
-      ...getState(),
-      status,
-      restUserData,
-      messages: [...(getState().messages || []), ...conversationsWithSoM],
-    });
-  };
-
-  let operator: NutJSElectronOperator | DefaultBrowserOperator;
-
-  switch (settings.operator) {
-    case Operator.LocalComputer:
-      operator = new NutJSElectronOperator();
-      break;
-    case Operator.LocalBrowser:
-      await checkBrowserAvailability();
-      const { browserAvailable } = getState();
-      if (!browserAvailable) {
-        setState({
-          ...getState(),
-          status: StatusEnum.ERROR,
-          errorMsg:
-            'Browser is not available. Please install Chrome and try again.',
-        });
-        return;
-      }
-
-      operator = await DefaultBrowserOperator.getInstance(
-        false,
-        false,
-        false,
-        getState().status === StatusEnum.CALL_USER,
-        getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
+  )
+    throw new Error('Choose a local computer or browser operator.');
+  signal.throwIfAborted();
+  options?.onProgress?.('Preparing desktop tools…');
+  let operator;
+  if (settings.operator === Operator.LocalBrowser) {
+    const { checkBrowserAvailability } = await import('./browserCheck');
+    await abortable(checkBrowserAvailability(), signal);
+    if (!getState().browserAvailable)
+      throw new Error(
+        'Chrome is unavailable. Install Chrome or choose Computer in Settings.',
       );
-      break;
-    default:
-      break;
+    const { DefaultBrowserOperator } = await import(
+      '@ui-tars/operator-browser'
+    );
+    operator = await abortable(
+      DefaultBrowserOperator.getInstance(
+        false,
+        false,
+        false,
+        false,
+        getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
+      ),
+      signal,
+    );
+  } else {
+    const { NutJSElectronOperator } = await import('../agent/operator');
+    signal.throwIfAborted();
+    operator = new NutJSElectronOperator(signal);
   }
-
-  const modelVersion = getModelVersion(settings.vlmProvider);
-  const modelConfig = getLocalModelConfig(settings);
-  const systemPrompt = getGeminiSystemPrompt(language);
-
+  signal.throwIfAborted();
+  const config = {
+    ...getLocalModelConfig(settings),
+    model: options?.model || settings.vlmModelName,
+    max_tokens: 768,
+    onRoute: (r: { model: string; reason: string }) =>
+      options?.onRoute?.(r.model, r.reason),
+    onWait: (ms: number) =>
+      options?.onProgress?.(
+        'Waiting for model capacity (' + Math.ceil(ms / 1000) + 's)…',
+      ),
+  };
   const guiAgent = new GUIAgent({
-    model: new GeminiModel(modelConfig),
-    systemPrompt: systemPrompt,
+    model: new GeminiModel(config),
+    systemPrompt: getGeminiSystemPrompt(settings.language ?? 'en'),
     logger,
-    signal: abortController?.signal,
-    operator: operator!,
-    onData: handleData,
-    onError: (params) => {
-      const { error } = params;
-      logger.error('[onGUIAgentError]', error);
-      setState({
-        ...getState(),
-        status: StatusEnum.ERROR,
-        errorMsg: JSON.stringify({
-          status: error?.status,
-          message: error?.message,
-          stack: error?.stack,
-        }),
-      });
-    },
+    signal,
+    operator,
+    maxLoopCount: Math.min(settings.maxLoopCount || 25, 50),
+    // The request scheduler handles pacing; no unconditional sleep after a model response.
+    loopIntervalInMs: 0,
+    uiTarsVersion: getModelVersion(settings.vlmProvider),
     retry: {
-      model: {
-        maxRetries: 5,
-      },
-      screenshot: {
-        maxRetries: 5,
-      },
-      execute: {
-        maxRetries: 1,
-      },
+      model: { maxRetries: 0 },
+      screenshot: { maxRetries: 0 },
+      execute: { maxRetries: 0 },
     },
-    maxLoopCount: settings.maxLoopCount,
-    loopIntervalInMs: settings.loopIntervalInMs,
-    uiTarsVersion: modelVersion,
+    onData: ({ data }) => {
+      if (!current()) return;
+      const messages = [...getState().messages, ...data.conversations].slice(
+        -32,
+      );
+      const latestImage = messages.findLastIndex((m) => !!m.screenshotBase64);
+      const bounded = messages.map((m, i) =>
+        i !== latestImage && m.screenshotBase64
+          ? { ...m, screenshotBase64: undefined }
+          : m,
+      );
+      setState({ status: data.status, messages: bounded });
+      const last = data.conversations.at(-1);
+      if (last?.from === 'gpt')
+        options?.onProgress?.(last.value || 'Executing action…');
+      else if (last?.screenshotBase64)
+        options?.onProgress?.('Reading the current screen…');
+    },
+    onError: ({ error }) => {
+      if (current())
+        setState({
+          status: StatusEnum.ERROR,
+          errorMsg: error?.message || 'Desktop task failed.',
+        });
+    },
   });
-
   GUIAgentManager.getInstance().setAgent(guiAgent);
-  UTIOService.getInstance().sendInstruction(instructions);
-
-  const { sessionHistoryMessages } = getState();
-
-  beforeAgentRun(settings.operator);
-
-  const startTime = Date.now();
-
-  await guiAgent.run(instructions, sessionHistoryMessages).catch((e) => {
-    logger.error('[runAgentLoop error]', e);
-    setState({
-      ...getState(),
-      status: StatusEnum.ERROR,
-      errorMsg: e.message,
-    });
-  });
-
-  logger.info('[runAgent Totoal cost]: ', (Date.now() - startTime) / 1000, 's');
-
-  afterAgentRun(settings.operator);
+  try {
+    await abortable(
+      guiAgent.run(instructions, getState().sessionHistoryMessages.slice(-6)),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (getState().errorMsg) throw new Error(getState().errorMsg!);
+  } finally {
+    guiAgent.stop();
+    if (GUIAgentManager.getInstance().getAgent() === guiAgent)
+      GUIAgentManager.getInstance().clearAgent();
+  }
 };

@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { initIpc } from '@ui-tars/electron-ipc/main';
-import { ProxyClient } from '../remote/proxyClient';
 
 const t = initIpc.create();
 
@@ -15,6 +14,7 @@ export const remoteResourceRouter = t.router({
       resourceType: ResourceType;
     }>()
     .handle(async ({ input }) => {
+      const { ProxyClient } = await import('../remote/proxyClient');
       return ProxyClient.allocResource(input.resourceType);
     }),
   getRemoteResourceRDPUrl: t.procedure
@@ -22,6 +22,7 @@ export const remoteResourceRouter = t.router({
       resourceType: ResourceType;
     }>()
     .handle(async ({ input }) => {
+      const { ProxyClient } = await import('../remote/proxyClient');
       switch (input.resourceType) {
         case 'computer':
           return ProxyClient.getSandboxRDPUrl();
@@ -36,6 +37,7 @@ export const remoteResourceRouter = t.router({
       resourceType: ResourceType;
     }>()
     .handle(async ({ input }) => {
+      const { ProxyClient } = await import('../remote/proxyClient');
       return ProxyClient.releaseResource(input.resourceType);
     }),
   getTimeBalance: t.procedure
@@ -43,6 +45,7 @@ export const remoteResourceRouter = t.router({
       resourceType: ResourceType;
     }>()
     .handle(async ({ input }) => {
+      const { ProxyClient } = await import('../remote/proxyClient');
       const balance = await ProxyClient.getTimeBalance();
 
       switch (input.resourceType) {

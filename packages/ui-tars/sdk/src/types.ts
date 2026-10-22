@@ -31,7 +31,10 @@ export interface ExecuteParams {
 
 export type ExecuteOutput = { status: StatusEnum } & (object | void);
 
-export interface ScreenshotOutput extends ScreenshotResult {}
+export interface ScreenshotOutput extends ScreenshotResult {
+  size?: { width: number; height: number };
+  mime?: string;
+}
 
 export interface InvokeParams {
   conversations: Message[];

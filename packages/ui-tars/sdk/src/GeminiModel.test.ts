@@ -66,7 +66,7 @@ describe('Google-only native Gemini transport', () => {
   it('maps screenshots, system prompts, and assistant history to native generateContent', async () => {
     const { model, fetcher } = create();
     const result = await model.request(messages);
-    const [url, options] = fetcher.mock.calls[1] as unknown as [
+    const [url, options] = fetcher.mock.calls[0] as unknown as [
       string,
       RequestInit,
     ];
@@ -90,7 +90,7 @@ describe('Google-only native Gemini transport', () => {
   it('omits empty system instructions', async () => {
     const { model, fetcher } = create();
     await model.request([{ role: 'user', content: 'hello' }]);
-    const [, options] = fetcher.mock.calls[1] as unknown as [
+    const [, options] = fetcher.mock.calls[0] as unknown as [
       string,
       RequestInit,
     ];
@@ -171,10 +171,10 @@ describe('Google-only native Gemini transport', () => {
     expect((await model.request(messages)).prediction).toBe(
       'Action: finished()',
     );
-    const [url, options] = fetcher.mock.calls[1];
+    const [url, options] = fetcher.mock.calls[0];
     expect(String(url)).toContain('/gemma-4-31b-it:generateContent');
     expect(JSON.parse(options!.body as string).generationConfig).toMatchObject({
-      maxOutputTokens: 2048,
+      maxOutputTokens: 768,
       thinkingConfig: { thinkingLevel: 'minimal' },
     });
     expect(

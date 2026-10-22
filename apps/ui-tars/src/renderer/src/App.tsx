@@ -1,48 +1,40 @@
-/**
- * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
- * SPDX-License-Identifier: Apache-2.0
- */
-import { Route, HashRouter, Routes } from 'react-router';
-import { lazy, Suspense } from 'react';
-import { Toaster } from 'sonner';
-
-import { MainLayout } from './layouts/MainLayout';
-
-import './styles/globals.css';
-
-const Home = lazy(() => import('./pages/home'));
-const LocalOperator = lazy(() => import('./pages/local'));
-
-// const PaidRemoteOperator = lazy(() => import('./pages/remote/paid'));
-
-const Widget = lazy(() => import('./pages/widget'));
-
+import { Component, type ReactNode } from 'react';
+import AssistantPanel from './components/Assistant/AssistantPanel';
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: boolean }
+> {
+  state = { error: false };
+  static getDerivedStateFromError() {
+    return { error: true };
+  }
+  componentDidCatch() {
+    void window.electron.assistant.cancel().catch(() => {});
+  }
+  render() {
+    if (this.state.error)
+      return (
+        <div
+          style={{
+            padding: 30,
+            color: '#e8edf5',
+            background: '#111318',
+            height: '100vh',
+            fontFamily: 'system-ui',
+          }}
+        >
+          <h2>The panel needs to restart.</h2>
+          <p>Active requests were cancelled.</p>
+          <button onClick={() => location.reload()}>Reload panel</button>
+        </div>
+      );
+    return this.props.children;
+  }
+}
 export default function App() {
   return (
-    <HashRouter>
-      <Suspense
-        fallback={
-          <div className="loading-container">
-            <div className="loading-spinner" />
-          </div>
-        }
-      >
-        <Routes>
-          <Route element={<MainLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/local" element={<LocalOperator />} />
-
-            {/* <Route path="/paid-remote" element={<PaidRemoteOperator />} /> */}
-          </Route>
-
-          <Route path="/widget" element={<Widget />} />
-        </Routes>
-        <Toaster
-          position="top-right"
-          offset={{ top: '48px' }}
-          mobileOffset={{ top: '48px' }}
-        />
-      </Suspense>
-    </HashRouter>
+    <ErrorBoundary>
+      <AssistantPanel />
+    </ErrorBoundary>
   );
 }

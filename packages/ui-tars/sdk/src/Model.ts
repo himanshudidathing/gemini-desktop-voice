@@ -40,6 +40,12 @@ type OpenAIChatCompletionCreateParams = Omit<ClientOptions, 'maxRetries'> &
 export interface UITarsModelConfig extends OpenAIChatCompletionCreateParams {
   /** Select provider-specific request parameters. Defaults to UI-TARS. */
   provider?: 'ui-tars' | 'gemini';
+  onRoute?: (route: {
+    model: string;
+    reason: string;
+    failover: boolean;
+  }) => void;
+  onWait?: (ms: number) => void;
   /** Whether to use OpenAI Response API instead of Chat Completions API */
   useResponsesApi?: boolean;
 }
@@ -80,7 +86,10 @@ export class UITarsModel extends Model {
   /**
    * reset the model state
    */
+  private imageCache = new Map<string, string>();
+
   reset() {
+    this.imageCache.clear();
     this.headImageContext = null;
   }
 
@@ -317,9 +326,20 @@ export class UITarsModel extends Model {
             uiTarsVersion === UITarsModelVersion.DOUBAO_1_5_20B
           ? MAX_PIXELS_DOUBAO
           : MAX_PIXELS_V1_0;
+    signal?.throwIfAborted();
     const compressedImages = await Promise.all(
-      images.map((image) => preprocessResizeImage(image, maxPixels)),
+      images.map(async (image) => {
+        const cached = this.imageCache.get(image);
+        if (cached) return cached;
+        const compressed = await preprocessResizeImage(image, maxPixels);
+        signal?.throwIfAborted();
+        this.imageCache.set(image, compressed);
+        while (this.imageCache.size > 2)
+          this.imageCache.delete(this.imageCache.keys().next().value!);
+        return compressed;
+      }),
     );
+    signal?.throwIfAborted();
 
     const messages = convertToOpenAIMessages({
       conversations,

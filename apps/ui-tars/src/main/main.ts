@@ -22,20 +22,16 @@ import { createMainWindow } from '@main/window/index';
 import { registerIpcMain } from '@ui-tars/electron-ipc/main';
 import { ipcRoutes } from './ipcRoutes';
 
-import { UTIOService } from './services/utio';
 import { store } from './store/create';
-import { SettingStore } from './store/setting';
 import { createTray } from './tray';
 import { registerSettingsHandlers } from './services/settings';
-import { registerVoiceHandlers } from './services/voice';
+import { registerAssistantHandlers } from './services/assistant';
 import { sanitizeState } from './utils/sanitizeState';
 import { windowManager } from './services/windowManager';
-import { checkBrowserAvailability } from './services/browserCheck';
 
 const { isProd } = env;
 
 // 在应用初始化之前启用辅助功能支持
-app.commandLine.appendSwitch('force-renderer-accessibility');
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (squirrelStartup) {
@@ -52,26 +48,6 @@ if (isProd) {
   });
 }
 
-const loadDevDebugTools = async () => {
-  import('electron-debug').then(({ default: electronDebug }) => {
-    electronDebug({ showDevTools: false });
-  });
-
-  import('electron-devtools-installer')
-    .then(({ default: installExtensionDefault, REACT_DEVELOPER_TOOLS }) => {
-      // @ts-ignore
-      const installExtension = installExtensionDefault?.default;
-      const extensions = [installExtension(REACT_DEVELOPER_TOOLS)];
-
-      return Promise.all(extensions)
-        .then((names) => logger.info('Added Extensions:', names.join(', ')))
-        .catch((err) =>
-          logger.error('An error occurred adding extension:', err),
-        );
-    })
-    .catch(logger.error);
-};
-
 const initializeApp = async () => {
   const isAccessibilityEnabled = app.isAccessibilitySupportEnabled();
   logger.info('isAccessibilityEnabled', isAccessibilityEnabled);
@@ -83,35 +59,39 @@ const initializeApp = async () => {
     logger.info('ensureScreenCapturePermission', ensureScreenCapturePermission);
   }
 
-  await checkBrowserAvailability();
-
-  // if (env.isDev) {
-  await loadDevDebugTools();
-  // }
+  // Browser discovery is deferred until the user starts a browser task.
 
   logger.info('createTray');
   // Tray
   await createTray();
 
-  // Send app launched event
-  await UTIOService.getInstance().appLaunched();
-
   logger.info('createMainWindow');
   let mainWindow = createMainWindow();
 
   session.defaultSession.setDisplayMediaRequestHandler(
-    (_request, callback) => {
-      desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-        const primaryDisplay = screen.getPrimaryDisplay();
-        const primarySource = sources.find(
-          (source) => source.display_id === primaryDisplay.id.toString(),
-        );
-
-        callback({ video: primarySource!, audio: 'loopback' });
-      });
+    (request, callback) => {
+      if (request.frame !== mainWindow.webContents.mainFrame) {
+        callback({});
+        return;
+      }
+      desktopCapturer
+        .getSources({
+          types: ['screen'],
+          thumbnailSize: { width: 0, height: 0 },
+          fetchWindowIcons: false,
+        })
+        .then((sources) => {
+          const source =
+            sources.find(
+              (s) => s.display_id === String(screen.getPrimaryDisplay().id),
+            ) || sources[0];
+          callback(source ? { video: source } : {});
+        })
+        .catch(() => callback({}));
     },
     { useSystemPicker: false },
   );
+  registerAssistantHandlers(mainWindow);
 
   logger.info('mainZustandBridge');
 
@@ -148,19 +128,6 @@ const initializeApp = async () => {
   });
 
   logger.info('initializeApp end');
-
-  // Check and update remote presets
-  const settings = SettingStore.getStore();
-  if (
-    settings.presetSource?.type === 'remote' &&
-    settings.presetSource.autoUpdate
-  ) {
-    try {
-      await SettingStore.importPresetFromUrl(settings.presetSource.url!, true);
-    } catch (error) {
-      logger.error('Failed to update preset:', error);
-    }
-  }
 };
 
 /**
@@ -193,11 +160,12 @@ const registerIPCHandlers = (
 
   // TODO: move to ipc routes
   ipcMain.handle('utio:shareReport', async (_, params) => {
+    const { UTIOService } = await import('./services/utio');
     await UTIOService.getInstance().shareReport(params);
   });
 
   registerSettingsHandlers();
-  registerVoiceHandlers();
+
   // register ipc services routes
   registerIpcMain(ipcRoutes);
 

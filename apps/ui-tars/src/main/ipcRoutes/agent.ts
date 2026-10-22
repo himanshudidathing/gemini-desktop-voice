@@ -5,11 +5,11 @@
 import { initIpc } from '@ui-tars/electron-ipc/main';
 import { StatusEnum, Conversation, Message } from '@ui-tars/shared/types';
 import { store } from '@main/store/create';
-import { runAgent } from '@main/services/runAgent';
+
 import { showWindow } from '@main/window/index';
 
 import { closeScreenMarker } from '@main/window/ScreenMarker';
-import { GUIAgent } from '@ui-tars/sdk';
+import type { GUIAgent } from '@ui-tars/sdk';
 import { Operator } from '@ui-tars/sdk/core';
 
 const t = initIpc.create();
@@ -55,6 +55,7 @@ export const agentRoute = t.router({
     });
 
     try {
+      const { runAgent } = await import('../services/runAgent');
       await runAgent(store.setState, store.getState);
     } catch (error) {
       store.setState({
@@ -71,14 +72,14 @@ export const agentRoute = t.router({
   }),
   pauseRun: t.procedure.input<void>().handle(async () => {
     const guiAgent = GUIAgentManager.getInstance().getAgent();
-    if (guiAgent instanceof GUIAgent) {
+    if (guiAgent) {
       guiAgent.pause();
       store.setState({ thinking: false });
     }
   }),
   resumeRun: t.procedure.input<void>().handle(async () => {
     const guiAgent = GUIAgentManager.getInstance().getAgent();
-    if (guiAgent instanceof GUIAgent) {
+    if (guiAgent) {
       guiAgent.resume();
       store.setState({ thinking: false });
     }
@@ -91,7 +92,7 @@ export const agentRoute = t.router({
 
     abortController?.abort();
     const guiAgent = GUIAgentManager.getInstance().getAgent();
-    if (guiAgent instanceof GUIAgent) {
+    if (guiAgent) {
       guiAgent.resume();
       guiAgent.stop();
     }

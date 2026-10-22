@@ -228,12 +228,6 @@ importers:
       electron:
         specifier: 34.1.1
         version: 34.1.1
-      electron-debug:
-        specifier: ^3.2.0
-        version: 3.2.0
-      electron-devtools-installer:
-        specifier: ^3.2.0
-        version: 3.2.1
       electron-log:
         specifier: 5.2.4
         version: 5.2.4
@@ -309,12 +303,6 @@ importers:
 
   apps/ui-tars/src/renderer:
     dependencies:
-      '@emotion/react':
-        specifier: ^11.13.3
-        version: 11.14.0(@types/react@19.1.2)(react@19.1.0)
-      '@emotion/styled':
-        specifier: ^11.13.0
-        version: 11.14.0(@emotion/react@11.14.0(@types/react@19.1.2)(react@19.1.0))(@types/react@19.1.2)(react@19.1.0)
       '@hookform/resolvers':
         specifier: ^5.0.1
         version: 5.0.1(react-hook-form@7.46.1(react@19.1.0))
@@ -378,9 +366,6 @@ importers:
       dayjs:
         specifier: 1.11.13
         version: 1.11.13
-      formik:
-        specifier: 2.4.6
-        version: 2.4.6(react@19.1.0)
       framer-motion:
         specifier: ^11.11.9
         version: 11.18.2(@emotion/is-prop-valid@1.3.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -414,12 +399,6 @@ importers:
       react:
         specifier: 19.1.0
         version: 19.1.0
-      react-countdown:
-        specifier: 2.3.6
-        version: 2.3.6(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      react-countup:
-        specifier: 6.5.3
-        version: 6.5.3(react@19.1.0)
       react-dom:
         specifier: 19.1.0
         version: 19.1.0(react@19.1.0)

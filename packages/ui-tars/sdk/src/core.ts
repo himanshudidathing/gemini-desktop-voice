@@ -21,3 +21,11 @@ export {
 export { StatusEnum } from '@ui-tars/shared/types';
 
 export { googleGenerateContent } from './googleQuota';
+
+export { googleRoutedGenerate, FAST_MODEL, DEEP_MODEL } from './googleRouting';
+export {
+  getGoogleRestQuota,
+  estimateGoogleTokens,
+  GoogleRequestError,
+} from './googleQuota';
+export type { RouteEvent } from './googleRouting';

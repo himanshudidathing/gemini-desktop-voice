@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 
 import { logger } from '@main/logger';
 import * as env from '@main/env';
@@ -25,11 +25,43 @@ export function show() {
 }
 
 export function createMainWindow() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(460, area.width);
   mainWindow = createWindow({
     routerPath: '/',
-    width: 1200,
-    height: 700,
-    alwaysOnTop: false,
+    showInBackground: process.env.GEMINI_START_HIDDEN === '1',
+    width,
+    height: area.height,
+    x: area.x + area.width - width,
+    y: area.y,
+    minWidth: Math.min(360, area.width),
+    minHeight: Math.min(480, area.height),
+    frame: false,
+    transparent: false,
+    backgroundColor: '#111318',
+    vibrancy: undefined,
+    alwaysOnTop: true,
+    title: 'Gemini Desktop',
+  });
+  mainWindow.setMenuBarVisibility(false);
+  // Re-dock after monitor/work-area changes; never leave the controls off screen.
+  const dock = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const bounds = mainWindow.getBounds();
+    const work = screen.getDisplayMatching(bounds).workArea;
+    const nextWidth = Math.min(bounds.width, work.width);
+    mainWindow.setBounds({
+      x: work.x + work.width - nextWidth,
+      y: work.y,
+      width: nextWidth,
+      height: work.height,
+    });
+  };
+  screen.on('display-metrics-changed', dock);
+  screen.on('display-removed', dock);
+  mainWindow.once('closed', () => {
+    screen.removeListener('display-metrics-changed', dock);
+    screen.removeListener('display-removed', dock);
   });
 
   mainWindow.on('close', (event) => {

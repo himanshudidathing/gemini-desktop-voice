@@ -5,14 +5,7 @@ import {
   SearchEngineForSettings,
   VLMProviderV2,
 } from '../store/types';
-import {
-  closeScreenMarker,
-  hideScreenWaterFlow,
-  hideWidgetWindow,
-  showScreenWaterFlow,
-  showWidgetWindow,
-} from '../window/ScreenMarker';
-import { hideMainWindow, showMainWindow } from '../window';
+import { closeScreenMarker } from '../window/ScreenMarker';
 import { SearchEngine } from '@ui-tars/operator-browser';
 
 export const getModelVersion = (
@@ -30,43 +23,8 @@ export const getLocalBrowserSearchEngine = (
   return (engine || SearchEngineForSettings.GOOGLE) as unknown as SearchEngine;
 };
 
-export const beforeAgentRun = async (operator: Operator) => {
-  switch (operator) {
-    case Operator.RemoteComputer:
-      break;
-    case Operator.RemoteBrowser:
-      break;
-    case Operator.LocalComputer:
-      showWidgetWindow();
-      showScreenWaterFlow();
-      hideMainWindow();
-      break;
-    case Operator.LocalBrowser:
-      hideMainWindow();
-      showWidgetWindow();
-      break;
-    default:
-      break;
-  }
-};
-
-export const afterAgentRun = (operator: Operator) => {
-  switch (operator) {
-    case Operator.RemoteComputer:
-      break;
-    case Operator.RemoteBrowser:
-      break;
-    case Operator.LocalComputer:
-      hideWidgetWindow();
-      closeScreenMarker();
-      hideScreenWaterFlow();
-      showMainWindow();
-      break;
-    case Operator.LocalBrowser:
-      hideWidgetWindow();
-      showMainWindow();
-      break;
-    default:
-      break;
-  }
+// Sidebar remains available throughout a task, including its Stop button.
+export const beforeAgentRun = async (_operator: Operator) => {};
+export const afterAgentRun = (_operator: Operator) => {
+  closeScreenMarker();
 };

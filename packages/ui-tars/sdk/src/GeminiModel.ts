@@ -1,7 +1,7 @@
 /** Google-only native generateContent transport for the desktop screenshot loop. */
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { UITarsModelVersion } from '@ui-tars/shared/types';
-import { googleGenerateContent } from './googleQuota';
+import { googleRoutedGenerate } from './googleRouting';
 import { UITarsModel, type UITarsModelConfig } from './Model';
 
 export class GeminiModel extends UITarsModel {
@@ -59,7 +59,9 @@ export class GeminiModel extends UITarsModel {
     const signal = options.signal
       ? AbortSignal.any([options.signal, AbortSignal.timeout(180000)])
       : AbortSignal.timeout(180000);
-    const data = await googleGenerateContent({
+    const data = await googleRoutedGenerate({
+      onRoute: this.modelConfig.onRoute,
+      onWait: this.modelConfig.onWait,
       model: this.modelName,
       apiKey: this.modelConfig.apiKey ?? '',
       fetcher: this.modelConfig.fetch ?? fetch,
@@ -68,7 +70,7 @@ export class GeminiModel extends UITarsModel {
         ...(system.length ? { systemInstruction: { parts: system } } : {}),
         contents,
         generationConfig: {
-          maxOutputTokens: this.modelConfig.max_tokens ?? 2048,
+          maxOutputTokens: this.modelConfig.max_tokens ?? 768,
           temperature: 0,
           ...(this.modelName.startsWith('gemma-4-')
             ? { thinkingConfig: { thinkingLevel: 'minimal' } }

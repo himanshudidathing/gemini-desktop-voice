@@ -8,11 +8,49 @@ import { IpcRendererEvent, contextBridge, ipcRenderer } from 'electron';
 import type { UTIOPayload } from '@ui-tars/utio';
 
 import type { VoiceEvent } from '@main/shared/voice';
+import type {
+  AssistantEvent,
+  AssistantRequest,
+  MediaArtifact,
+} from '@main/shared/assistant';
 import type { AppState, LocalStore } from '@main/store/types';
 
 export type Channels = '';
 
 const electronHandler = {
+  assistant: {
+    submit: (request: AssistantRequest): Promise<{ local: boolean }> =>
+      ipcRenderer.invoke('assistant:submit', request),
+    cancel: (): Promise<void> => ipcRenderer.invoke('assistant:cancel'),
+    toggleVoice: (): Promise<void> => ipcRenderer.invoke('assistant:voice'),
+    window: (action: 'minimize' | 'expand' | 'close'): Promise<void> =>
+      ipcRenderer.invoke('assistant:window', action),
+    startRecording: (): Promise<string> =>
+      ipcRenderer.invoke('assistant:record-start'),
+    appendRecording: (id: string, bytes: Uint8Array): Promise<void> =>
+      ipcRenderer.invoke('assistant:record-chunk', id, bytes),
+    finishRecording: (id: string): Promise<MediaArtifact | null> =>
+      ipcRenderer.invoke('assistant:record-finish', id),
+    reveal: (id: string): Promise<void> =>
+      ipcRenderer.invoke('assistant:reveal', id),
+    transcribe: (bytes: Uint8Array, mimeType: string): Promise<string> =>
+      ipcRenderer.invoke('assistant:transcribe', bytes, mimeType),
+    quotas: (): Promise<
+      {
+        model: string;
+        requests: number;
+        tokens: number;
+        queued: number;
+        waitMs: number;
+      }[]
+    > => ipcRenderer.invoke('assistant:quotas'),
+    onEvent: (callback: (event: AssistantEvent) => void) => {
+      const listener = (_: IpcRendererEvent, value: AssistantEvent) =>
+        callback(value);
+      ipcRenderer.on('assistant:event', listener);
+      return () => ipcRenderer.removeListener('assistant:event', listener);
+    },
+  },
   voice: {
     speak: (text: string): Promise<void> =>
       ipcRenderer.invoke('voice:speak', text),

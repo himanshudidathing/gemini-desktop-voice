@@ -26,3 +26,8 @@ jobs:
         run: npx --yes pnpm@9.10.0 --filter ui-tars-desktop typecheck
       - name: Build desktop bundles
         run: npx --yes pnpm@9.10.0 --filter ui-tars-desktop build:dist
+
+      - name: Test sidebar interactions
+        run: npx --yes pnpm@9.10.0 test:assistant-ui
+      - name: Profile local routing
+        run: npx --yes pnpm@9.10.0 profile:assistant

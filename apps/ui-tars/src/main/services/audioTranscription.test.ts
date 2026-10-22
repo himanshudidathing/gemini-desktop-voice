@@ -27,7 +27,7 @@ describe('audio file transcription', () => {
   it('sends audio only to Google and returns editable text, not a running command', async () => {
     const fetcher = transport();
     expect(await transcribeAudio(audio, settings, fetcher)).toBe('Open Chrome');
-    const [url, options] = fetcher.mock.calls[1] as unknown as [
+    const [url, options] = fetcher.mock.calls[0] as unknown as [
       string,
       RequestInit,
     ];
@@ -45,7 +45,7 @@ describe('audio file transcription', () => {
       { ...settings, vlmModelName: 'gemma-4-31b-it' },
       fetcher,
     );
-    expect(String(fetcher.mock.calls[1][0])).toContain(
+    expect(String(fetcher.mock.calls[0][0])).toContain(
       '/gemini-3.8-flash:generateContent',
     );
   });

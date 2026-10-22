@@ -97,7 +97,26 @@ export default defineConfig({
         },
       },
     },
-    plugins: [react(), tsconfigPaths(), tailwindcss()],
+    plugins: [
+      react(),
+      tsconfigPaths(),
+      tailwindcss(),
+      {
+        name: 'development-csp',
+        transformIndexHtml: {
+          order: 'pre',
+          handler(html, context) {
+            // React Refresh injects a development-only inline preamble.
+            return context.server
+              ? html.replace(
+                  "script-src 'self';",
+                  "script-src 'self' 'unsafe-inline';",
+                )
+              : html;
+          },
+        },
+      },
+    ],
     define: {
       APP_VERSION: JSON.stringify(pkg.version),
     },

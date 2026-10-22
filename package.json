@@ -19,7 +19,10 @@
     "publish-beta:packages": "bash scripts/release-beta-pkgs.sh",
     "prepare": "husky",
     "test:gemini": "vitest run --workspace vitest.gemini.workspace.mts",
-    "test:voice-ui": "node scripts/voice-ui-smoke.cjs"
+    "test:voice-ui": "node scripts/assistant-ui-smoke.cjs",
+    "test:assistant-ui": "node scripts/assistant-ui-smoke.cjs",
+    "profile:assistant": "tsx scripts/profile-assistant.ts",
+    "test:assistant-native": "node scripts/assistant-native-smoke.cjs"
   },
   "pnpm": {
     "patchedDependencies": {}

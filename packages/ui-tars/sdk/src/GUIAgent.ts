@@ -35,6 +35,30 @@ import {
   SYSTEM_PROMPT_TEMPLATE,
 } from './constants';
 import { InternalServerError } from 'openai';
+import { abortableDelay } from './googleQuota';
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener('abort', abort);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        if (!signal.aborted) resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      },
+    );
+    if (signal.aborted) abort();
+  });
+}
 
 export class GUIAgent<T extends Operator> extends BaseGUIAgent<
   GUIAgentConfig<T>
@@ -138,7 +162,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
               conversations: [],
             },
           });
-          await this.resumePromise;
+          await abortable(this.resumePromise, signal);
           data.status = StatusEnum.RUNNING;
           await onData?.({
             data: {
@@ -182,29 +206,42 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
         loopCnt += 1;
         const start = Date.now();
 
-        const snapshot = await asyncRetry(() => operator.screenshot(), {
-          retries: retry?.screenshot?.maxRetries ?? 0,
-          minTimeout: 5000,
-          onRetry: retry?.screenshot?.onRetry,
-        });
+        signal?.throwIfAborted();
+        const snapshot = await abortable(
+          asyncRetry(
+            () => {
+              signal?.throwIfAborted();
+              return operator.screenshot();
+            },
+            {
+              retries: retry?.screenshot?.maxRetries ?? 0,
+              minTimeout: 250,
+              onRetry: retry?.screenshot?.onRetry,
+            },
+          ),
+          signal,
+        );
+        signal?.throwIfAborted();
 
-        const { width, height, mime } = await Jimp.fromBuffer(
-          Buffer.from(replaceBase64Prefix(snapshot.base64), 'base64'),
-        ).catch((e) => {
-          logger.error('[GUIAgent] screenshot error', e);
-          return {
-            width: null,
-            height: null,
-            mime: '',
-          };
-        });
+        const { width, height, mime } = snapshot.size
+          ? { ...snapshot.size, mime: snapshot.mime || 'image/jpeg' }
+          : await Jimp.fromBuffer(
+              Buffer.from(replaceBase64Prefix(snapshot.base64), 'base64'),
+            ).catch((e) => {
+              logger.error('[GUIAgent] screenshot error', e);
+              return {
+                width: null,
+                height: null,
+                mime: '',
+              };
+            });
 
         const isValidImage = !!(snapshot?.base64 && width && height);
 
         if (!isValidImage) {
           loopCnt -= 1;
           snapshotErrCnt += 1;
-          await sleep(1000);
+          await abortable(sleep(250), signal);
           continue;
         }
 
@@ -237,6 +274,12 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
           });
         }
 
+        if (data.conversations.length > 13)
+          data.conversations = [
+            data.conversations[0],
+            ...data.conversations.slice(-12),
+          ];
+        signal?.throwIfAborted();
         // conversations -> messages, images
         const modelFormat = toVlmModelFormat({
           historyMessages: historyMessages || [],
@@ -245,7 +288,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
         });
         // sliding images window to vlm model
         const vlmParams: InvokeParams = {
-          ...processVlmParams(modelFormat.conversations, modelFormat.images),
+          ...processVlmParams(modelFormat.conversations, modelFormat.images, 1),
           screenContext: {
             width,
             height,
@@ -267,7 +310,9 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
         } = await asyncRetry(
           async (bail) => {
             try {
-              const result = await model.invoke(vlmParams);
+              signal?.throwIfAborted();
+              const result = await abortable(model.invoke(vlmParams), signal);
+              signal?.throwIfAborted();
               return result;
             } catch (error: unknown) {
               if (
@@ -425,7 +470,9 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
           logger.info(
             `[GUIAgent] sleep for ${this.config.loopIntervalInMs}ms before next loop`,
           );
-          await sleep(this.config.loopIntervalInMs);
+          if (signal)
+            await abortableDelay(this.config.loopIntervalInMs, signal);
+          else await sleep(this.config.loopIntervalInMs);
           logger.info(
             `[GUIAgent] sleep for ${this.config.loopIntervalInMs}ms before next loop done`,
           );
@@ -493,6 +540,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
   }
 
   public pause() {
+    if (this.isPaused) return;
     this.isPaused = true;
     this.resumePromise = new Promise((resolve) => {
       this.resolveResume = resolve;
@@ -510,6 +558,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
 
   public stop() {
     this.isStopped = true;
+    this.resume();
   }
 
   private buildSystemPrompt() {

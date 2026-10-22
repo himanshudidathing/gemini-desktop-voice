@@ -38,7 +38,9 @@ export function createWindow({
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
       backgroundThrottling: false,
-      webSecurity: !!env.isDev,
+      webSecurity: true,
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   };
 
@@ -108,10 +110,14 @@ export function createWindow({
   menuBuilder.buildMenu();
 
   browserWindow.webContents.setWindowOpenHandler((edata) => {
-    shell.openExternal(edata.url);
+    if (/^https?:\/\//i.test(edata.url)) void shell.openExternal(edata.url);
     return { action: 'deny' };
   });
 
+  browserWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
   return browserWindow;
 }
 

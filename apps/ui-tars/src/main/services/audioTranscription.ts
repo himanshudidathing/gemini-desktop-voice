@@ -6,6 +6,7 @@ export async function transcribeAudio(
   audio: { bytes: Uint8Array; mimeType: string },
   settings: Pick<LocalStore, 'vlmApiKey' | 'vlmModelName'>,
   fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (
     !(audio?.bytes instanceof Uint8Array) ||
@@ -25,6 +26,7 @@ export async function transcribeAudio(
     model: 'gemini-3.8-flash',
     apiKey: settings.vlmApiKey,
     fetcher,
+    signal,
     body: {
       systemInstruction: {
         parts: [
